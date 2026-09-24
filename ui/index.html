@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Create and manage voice agents." />
+    <title>Agent Studio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-mark" aria-hidden="true">A</div>
+        <div>
+          <p class="eyebrow">VOICE PLATFORM</p>
+          <p class="brand-name">Agent Studio</p>
+        </div>
+        <nav class="navigation-links">
+          <a class="navigation-link active" href="#agents" aria-current="page">
+            <span aria-hidden="true">▦</span> Agents
+          </a>
+          <a class="navigation-link" href="#settings"><span aria-hidden="true">⚙</span> Settings</a>
+        </nav>
+        <div class="sidebar-footer">
+          <span class="status-dot"></span>
+          <span>Workspace ready</span>
+        </div>
+      </aside>
+
+      <main class="main-content" id="agents">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">WORKSPACE / AGENTS</p>
+            <h1>Your agents</h1>
+            <p class="page-description">Create, configure, and manage the voice agents that power your conversations.</p>
+          </div>
+          <button class="primary-button" id="open-create-button" type="button">
+            <span aria-hidden="true">+</span> Create agent
+          </button>
+        </header>
+
+        <section class="toolbar" aria-label="Agent controls">
+          <label class="search-field">
+            <span aria-hidden="true">⌕</span>
+            <span class="visually-hidden">Search agents</span>
+            <input id="agent-search" type="search" placeholder="Search agents" autocomplete="off" />
+          </label>
+          <label class="filter-field">
+            <span class="visually-hidden">Filter by status</span>
+            <select id="status-filter">
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="draft">Draft</option>
+            </select>
+          </label>
+        </section>
+
+        <section id="agent-list" class="agent-grid" aria-live="polite"></section>
+        <section id="empty-state" class="empty-state" hidden>
+          <div class="empty-icon" aria-hidden="true">✦</div>
+          <h2 id="empty-title">No agents yet</h2>
+          <p id="empty-description">Create your first agent to start shaping a voice experience.</p>
+          <button class="secondary-button" id="empty-create-button" type="button">Create your first agent</button>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="agent-modal" hidden>
+      <section class="agent-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" id="modal-eyebrow">NEW AGENT</p>
+            <h2 id="modal-title">Create an agent</h2>
+          </div>
+          <button class="icon-button" id="close-modal-button" type="button" aria-label="Close dialog">×</button>
+        </div>
+
+        <form id="agent-form" novalidate>
+          <input id="agent-id" type="hidden" />
+          <div class="form-section">
+            <h3>Identity</h3>
+            <p class="section-description">Give your agent a clear purpose and a name your team will recognize.</p>
+            <label class="form-field">
+              <span>Name <strong>*</strong></span>
+              <input id="agent-name" type="text" maxlength="48" placeholder="e.g. Customer support guide" required />
+              <small>A short, recognizable name for this agent.</small>
+            </label>
+            <label class="form-field">
+              <span>Description</span>
+              <textarea id="agent-description" rows="2" maxlength="160" placeholder="What should this agent help people with?"></textarea>
+              <small>This appears on the agent overview card.</small>
+            </label>
+          </div>
+
+          <div class="form-section">
+            <h3>Behavior</h3>
+            <p class="section-description">Explain how the agent should respond in conversations.</p>
+            <label class="form-field">
+              <span>Instructions <strong>*</strong></span>
+              <textarea id="agent-instructions" rows="5" placeholder="You are a calm and helpful assistant..." required></textarea>
+              <small>Use plain language. These instructions guide every conversation.</small>
+            </label>
+            <div class="form-row">
+              <label class="form-field">
+                <span>Model</span>
+                <select id="agent-model">
+                  <option value="google/gemma-4-31b-it">Gemma 4 31B</option>
+                  <option value="openai/gpt-4.1-mini">GPT-4.1 mini</option>
+                  <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                </select>
+              </label>
+              <label class="form-field">
+                <span>Starting status</span>
+                <select id="agent-status">
+                  <option value="draft">Draft</option>
+                  <option value="active">Active</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <p class="form-error" id="form-error" role="alert" hidden></p>
+          <div class="modal-actions">
+            <button class="secondary-button" id="cancel-modal-button" type="button">Cancel</button>
+            <button class="primary-button" type="submit">Save agent</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

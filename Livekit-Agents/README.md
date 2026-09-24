@@ -23,6 +23,16 @@ The starter project includes:
 
 This starter app is compatible with any [custom web/mobile frontend](https://docs.livekit.io/frontends/) or [telephony](https://docs.livekit.io/telephony/).
 
+## Agent management UI
+
+This repository also includes a dependency-free local UI for creating and editing agent definitions. From the repository root, run:
+
+```console
+python3 start.py
+```
+
+Then open `http://127.0.0.1:8000`. Agent definitions are stored in the browser's local storage until a backend persistence API is connected.
+
 ## Using coding agents
 
 This project is designed to work with coding agents like [Claude Code](https://claude.com/product/claude-code), [Cursor](https://www.cursor.com/), and [Codex](https://openai.com/codex/).
