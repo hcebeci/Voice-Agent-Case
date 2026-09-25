@@ -29,6 +29,7 @@ const elements = {
   sessionsTodayValue: document.querySelector("#sessions-today-value"),
   availableAgentsValue: document.querySelector("#available-agents-value"),
   activeAgentsValue: document.querySelector("#active-agents-value"),
+  activeSessionsValue: document.querySelector("#active-sessions-value"),
   sleepingAgentsValue: document.querySelector("#sleeping-agents-value"),
   dashboardDate: document.querySelector("#dashboard-date"),
   sessionTimeline: document.querySelector("#session-timeline"),
@@ -200,6 +201,7 @@ function renderDashboard(dashboard) {
   elements.sessionsTodayValue.textContent = metrics.total_sessions_today ?? 0;
   elements.availableAgentsValue.textContent = metrics.available_agent_count ?? 0;
   elements.activeAgentsValue.textContent = metrics.active_agent_count ?? 0;
+  elements.activeSessionsValue.textContent = metrics.active_session_count ?? 0;
   elements.sleepingAgentsValue.textContent = metrics.sleeping_agent_count ?? 0;
   elements.dashboardDate.textContent = formatDate(dashboard.date);
   renderSessionList(elements.sessionTimeline, dashboard.today_sessions ?? [], "No sessions today.");

@@ -71,6 +71,7 @@ export default {
         total_sessions_today: todaySessionsResult.data?.length ?? 0,
         available_agent_count: availableAgents.length,
         active_agent_count: agents.filter((agent) => agent.runtime_status === "active").length,
+        active_session_count: activeSessionsResult.data?.length ?? 0,
         sleeping_agent_count: agents.filter((agent) => agent.runtime_status === "sleeping").length,
         offline_agent_count: agents.filter((agent) => agent.runtime_status === "offline").length,
       },
