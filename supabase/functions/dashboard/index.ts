@@ -24,6 +24,17 @@ function addRuntimeStatus(agents: any[], activeSessions: any[]) {
   })
 }
 
+/** Mark sessions that never left the connecting state as failed after a short timeout. */
+async function reconcileStaleConnectingSessions(supabaseClient: any) {
+  const staleBefore = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+  const { error } = await supabaseClient
+    .from("sessions")
+    .update({ status: "failed", ended_at: new Date().toISOString() })
+    .eq("status", "connecting")
+    .lt("created_at", staleBefore)
+  if (error) throw new Error(error.message)
+}
+
 /** Return the daily dashboard summary and the latest session timeline. */
 export default {
   fetch: withSupabase({ auth: "user" }, async (request, context) => {
@@ -37,6 +48,12 @@ export default {
     const dayStart = new Date(`${dashboardDate}T00:00:00.000Z`)
     const nextDayStart = new Date(dayStart)
     nextDayStart.setUTCDate(nextDayStart.getUTCDate() + 1)
+
+    try {
+      await reconcileStaleConnectingSessions(context.supabase)
+    } catch (reconciliationError) {
+      return Response.json({ error: (reconciliationError as Error).message }, { status: 500 })
+    }
 
     const [agentsResult, activeSessionsResult, todaySessionsResult, latestSessionsResult] = await Promise.all([
       context.supabase.from("agents").select("id, name, archived_at"),

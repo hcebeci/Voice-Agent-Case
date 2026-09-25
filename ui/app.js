@@ -529,3 +529,8 @@ elements.modal.addEventListener("click", (event) => { if (event.target === eleme
 document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !elements.modal.hidden) closeModal(); });
 
 void initialiseApplication();
+
+/** Refresh server-derived runtime badges after webhook-driven lifecycle changes. */
+window.setInterval(() => {
+  if (!elements.appShell.hidden) void Promise.all([loadAgents(), loadDashboard()]);
+}, 15000);

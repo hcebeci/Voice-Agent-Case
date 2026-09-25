@@ -12,6 +12,7 @@ dependencies = [
     "livekit-agents~=1.8",
     "livekit-plugins-ai-coustics~=0.3",
     "python-dotenv",
+    "httpx>=0.28,<1",
 ]
 
 [dependency-groups]

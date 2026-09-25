@@ -1,5 +1,5 @@
 import { withSupabase } from "npm:@supabase/server"
-import { AccessToken, AgentDispatchClient } from "npm:livekit-server-sdk"
+import { AccessToken, AgentDispatchClient, RoomServiceClient } from "npm:livekit-server-sdk"
 
 type SessionRequest = {
   agent_id?: unknown
@@ -89,11 +89,20 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
       canSubscribe: true,
     })
 
-    const dispatchClient = new AgentDispatchClient(
-      livekitApiHost(livekitUrl),
-      livekitApiKey,
-      livekitApiSecret,
-    )
+    const apiHost = livekitApiHost(livekitUrl)
+    const roomService = new RoomServiceClient(apiHost, livekitApiKey, livekitApiSecret)
+
+    // Keep abandoned browser rooms short-lived so room_finished reaches the
+    // webhook promptly after the browser closes. These values are deliberately
+    // explicit instead of relying on LiveKit's longer defaults.
+    await roomService.createRoom({
+      name: roomName,
+      emptyTimeout: 30,
+      departureTimeout: 20,
+      maxParticipants: 4,
+    })
+
+    const dispatchClient = new AgentDispatchClient(apiHost, livekitApiKey, livekitApiSecret)
     await dispatchClient.createDispatch(roomName, "Voice-Agent-Case", {
       metadata: JSON.stringify({
         session_id: sessionId,

@@ -1,6 +1,9 @@
+import asyncio
 import json
 import logging
+import os
 import textwrap
+from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -15,9 +18,13 @@ from livekit.agents import (
 )
 from livekit.plugins import ai_coustics
 
+from observability import ObservabilityClient, TurnTracker
+
 logger = logging.getLogger("agent")
 
-load_dotenv(".env.local")
+project_root = Path(__file__).resolve().parents[2]
+load_dotenv(project_root / "supabase/.env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env.local")
 
 
 class Assistant(Agent):
@@ -117,6 +124,25 @@ async def my_agent(ctx: JobContext):
         "agent_id": metadata.get("agent_id", "unknown"),
     }
 
+    observability_client = None
+    turn_tracker = None
+    background_tasks: set[asyncio.Task] = set()
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_secret_key = os.getenv("SUPABASE_SECRET_KEY")
+    if session_id and supabase_url and supabase_secret_key:
+        observability_client = ObservabilityClient(session_id, supabase_url, supabase_secret_key)
+        turn_tracker = TurnTracker(observability_client)
+    else:
+        logger.warning("Observability is not configured for session %s", session_id or "unknown")
+
+    def start_background_task(coroutine):
+        """Keep an asynchronous telemetry task alive until it completes."""
+
+        task = asyncio.create_task(coroutine)
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
+        return task
+
     # Set up a voice AI pipeline using AssemblyAI, Fish Audio, and the LiveKit turn detector
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
@@ -136,9 +162,9 @@ async def my_agent(ctx: JobContext):
             # AgentSession supplies the required VAD automatically.
             # See more at https://docs.livekit.io/agents/build/turns
             turn_detection=inference.TurnDetector(),
-            # Adaptive interruptions use the turn detector to tell a real interruption from a
-            # backchannel like "mhm" or "right", so the agent keeps talking through the latter.
-            interruption={"mode": "adaptive"},
+            # Interruption handling is disabled for the MVP; a later iteration
+            # can add interruption events and metrics to the observability contract.
+            interruption={"enabled": False},
             # allow the LLM to generate a response while waiting for the end of turn
             # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
             preemptive_generation={"enabled": True},
@@ -149,6 +175,52 @@ async def my_agent(ctx: JobContext):
         # Audio model above.
         expressive=True,
     )
+
+    if turn_tracker and observability_client:
+        @session.on("user_state_changed")
+        def on_user_state_changed(event):
+            turn_tracker.on_user_state_changed(event)
+
+        @session.on("user_input_transcribed")
+        def on_user_input_transcribed(event):
+            turn_tracker.on_user_transcript(event)
+
+        @session.on("conversation_item_added")
+        def on_conversation_item_added(event):
+            turn_tracker.on_conversation_item(event)
+
+        @session.on("agent_state_changed")
+        def on_agent_state_changed(event):
+            turn_tracker.on_agent_state_changed(event)
+
+        @session.on("tool_execution_updated")
+        def on_tool_execution_updated(event):
+            turn_tracker.on_tool_update(event)
+
+        @session.on("session_usage_updated")
+        def on_session_usage_updated(event):
+            observability_client.emit_nowait(
+                "session.usage",
+                occurred_at=event.created_at,
+                turn_number=turn_tracker.current_turn_number,
+                payload={"usage": event.usage},
+            )
+
+        @session.on("close")
+        def on_session_close(_event):
+            start_background_task(observability_client.close())
+
+        for component_name, component in (
+            ("stt", session.stt),
+            ("llm", session.llm),
+            ("tts", session.tts),
+        ):
+            if component is None:
+                continue
+
+            @component.on("metrics_collected")
+            def on_component_metrics(metrics, name=component_name):
+                turn_tracker.on_component_metrics(name, metrics)
 
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
