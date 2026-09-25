@@ -1,0 +1,13 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+supabase/.env
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Local tooling output
+.DS_Store
+**/.temp/

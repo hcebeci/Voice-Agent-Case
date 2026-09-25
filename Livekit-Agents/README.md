@@ -31,7 +31,7 @@ This repository also includes a dependency-free local UI for creating and editin
 python3 start.py
 ```
 
-Then open `http://127.0.0.1:8000`. Agent definitions are stored in the browser's local storage until a backend persistence API is connected.
+Then open `http://127.0.0.1:8000`. The UI signs in with Supabase Auth and stores agent definitions through the deployed `agents` Edge Function.
 
 ## Using coding agents
 
