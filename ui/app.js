@@ -12,7 +12,7 @@ if (applicationConfig.supabaseUrl && applicationConfig.supabasePublishableKey &&
   }
 }
 
-const pageState = { agents: [], editingAgentId: null, dashboard: null };
+const pageState = { agents: [], editingAgentId: null, dashboard: null, liveSession: null };
 const elements = {
   authScreen: document.querySelector("#auth-screen"),
   appShell: document.querySelector("#app-shell"),
@@ -53,6 +53,13 @@ const elements = {
   description: document.querySelector("#agent-description"),
   instructions: document.querySelector("#agent-instructions"),
   model: document.querySelector("#agent-model"),
+  callModal: document.querySelector("#call-modal"),
+  callStatus: document.querySelector("#call-status"),
+  callAgentName: document.querySelector("#call-agent-name"),
+  callError: document.querySelector("#call-error"),
+  muteCallButton: document.querySelector("#mute-call-button"),
+  endCallButton: document.querySelector("#end-call-button"),
+  remoteAudioContainer: document.querySelector("#remote-audio-container"),
 };
 
 /** Display the authenticated workspace and hide the sign-in form. */
@@ -261,21 +268,112 @@ function renderAgentList() {
   elements.list.querySelectorAll("[data-action='edit']").forEach((button) => button.addEventListener("click", () => openEditModal(button.dataset.agentId)));
   elements.list.querySelectorAll("[data-action='archive']").forEach((button) => button.addEventListener("click", () => archiveAgent(button.dataset.agentId)));
   elements.list.querySelectorAll("[data-action='activate']").forEach((button) => button.addEventListener("click", () => activateAgent(button.dataset.agentId)));
+  elements.list.querySelectorAll("[data-action='call']").forEach((button) => button.addEventListener("click", () => startBrowserSession(button.dataset.agentId)));
 }
 
 /** Build a card that exposes the agent's purpose and the available actions. */
 function createAgentCardMarkup(agent) {
   const initials = agent.name.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase();
   const updatedDate = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(agent.updated_at));
+  const callAction = agent.runtime_status === "offline"
+    ? ""
+    : `<button class="text-button call-agent" data-action="call" data-agent-id="${agent.id}" type="button">Start call</button>`;
   const lifecycleAction = agent.runtime_status === "offline"
     ? `<button class="text-button" data-action="activate" data-agent-id="${agent.id}" type="button">Activate</button>`
     : `<button class="text-button delete" data-action="archive" data-agent-id="${agent.id}" type="button">Archive</button>`;
-  return `<article class="agent-card"><div class="agent-card-header"><div class="agent-avatar" aria-hidden="true">${initials}</div><span class="badge ${agent.runtime_status}">${agent.runtime_status}</span></div><h2>${escapeHtml(agent.name)}</h2><p class="agent-description">${escapeHtml(agent.description || "No description yet.")}</p><div class="agent-meta"><span>${escapeHtml(agent.model)}</span><span>·</span><span>Updated ${updatedDate}</span></div><div class="card-actions"><button class="text-button" data-action="edit" data-agent-id="${agent.id}" type="button">Edit</button>${lifecycleAction}</div></article>`;
+  return `<article class="agent-card"><div class="agent-card-header"><div class="agent-avatar" aria-hidden="true">${initials}</div><span class="badge ${agent.runtime_status}">${agent.runtime_status}</span></div><h2>${escapeHtml(agent.name)}</h2><p class="agent-description">${escapeHtml(agent.description || "No description yet.")}</p><div class="agent-meta"><span>${escapeHtml(agent.model)}</span><span>·</span><span>Updated ${updatedDate}</span></div><div class="card-actions">${callAction}<button class="text-button" data-action="edit" data-agent-id="${agent.id}" type="button">Edit</button>${lifecycleAction}</div></article>`;
 }
 
 /** Escape user-entered text before putting it into card markup. */
 function escapeHtml(value) {
   return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+}
+
+/** Update a LiveKit session's persisted lifecycle status without hiding the call UI. */
+async function updateBrowserSessionStatus(sessionId, status) {
+  return callWorkspaceApi("livekit-session", `?id=${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+/** Start a browser microphone session for one available agent. */
+async function startBrowserSession(agentId) {
+  if (pageState.liveSession) return;
+  const agent = pageState.agents.find((candidate) => candidate.id === agentId);
+  if (!agent || agent.runtime_status === "offline") return;
+  if (!window.LivekitClient) {
+    showError(elements.pageError, "The LiveKit browser client could not be loaded. Refresh the page and try again.");
+    return;
+  }
+
+  clearError(elements.callError);
+  elements.callModal.hidden = false;
+  elements.callAgentName.textContent = `Connecting to ${agent.name}…`;
+  elements.callStatus.textContent = "Connecting";
+  elements.callStatus.className = "badge sleeping";
+  elements.muteCallButton.disabled = true;
+
+  try {
+    const response = await callWorkspaceApi("livekit-session", "", {
+      method: "POST",
+      body: JSON.stringify({ agent_id: agent.id, source: "user_started" }),
+    });
+    const room = new window.LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+    pageState.liveSession = { room, sessionId: response.session_id, muted: false };
+
+    room.on(window.LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind !== window.LivekitClient.Track.Kind.Audio) return;
+      const audioElement = track.attach();
+      audioElement.autoplay = true;
+      elements.remoteAudioContainer.appendChild(audioElement);
+    });
+    room.on(window.LivekitClient.RoomEvent.TrackUnsubscribed, (track) => track.detach());
+    room.on(window.LivekitClient.RoomEvent.Disconnected, () => {
+      if (pageState.liveSession) void finishBrowserSession("completed", false);
+    });
+
+    await room.connect(response.server_url, response.participant_token);
+    await room.localParticipant.setMicrophoneEnabled(true);
+    await updateBrowserSessionStatus(response.session_id, "active");
+    elements.callAgentName.textContent = `Connected to ${agent.name}. Speak naturally and end the call when you are finished.`;
+    elements.callStatus.textContent = "Active";
+    elements.callStatus.className = "badge active";
+    elements.muteCallButton.disabled = false;
+    await room.startAudio().catch(() => undefined);
+    await loadDashboard();
+  } catch (error) {
+    const sessionId = pageState.liveSession?.sessionId;
+    if (sessionId) await updateBrowserSessionStatus(sessionId, "failed").catch(() => undefined);
+    pageState.liveSession = null;
+    showError(elements.callError, error.message ?? "Could not start the browser session.");
+    elements.callStatus.textContent = "Failed";
+    elements.callStatus.className = "badge offline";
+  }
+}
+
+/** End the active browser call and persist its terminal session status. */
+async function finishBrowserSession(status = "completed", disconnectRoom = true) {
+  const liveSession = pageState.liveSession;
+  if (!liveSession) {
+    elements.callModal.hidden = true;
+    return;
+  }
+  pageState.liveSession = null;
+  if (disconnectRoom) await liveSession.room.disconnect();
+  await updateBrowserSessionStatus(liveSession.sessionId, status).catch(() => undefined);
+  elements.remoteAudioContainer.replaceChildren();
+  elements.muteCallButton.disabled = true;
+  elements.callModal.hidden = true;
+  await Promise.all([loadAgents(), loadDashboard()]);
+}
+
+/** Toggle the local microphone while keeping the LiveKit room connected. */
+async function toggleCallMute() {
+  if (!pageState.liveSession) return;
+  pageState.liveSession.muted = !pageState.liveSession.muted;
+  await pageState.liveSession.room.localParticipant.setMicrophoneEnabled(!pageState.liveSession.muted);
+  elements.muteCallButton.textContent = pageState.liveSession.muted ? "Unmute microphone" : "Mute microphone";
 }
 
 /** Open a blank form for a new agent. */
@@ -418,6 +516,8 @@ elements.seeAllSessionsButton.addEventListener("click", async () => {
   await loadAllSessions();
 });
 elements.backToDashboardButton.addEventListener("click", () => showPage("dashboard-page"));
+elements.endCallButton.addEventListener("click", () => void finishBrowserSession("completed"));
+elements.muteCallButton.addEventListener("click", () => void toggleCallMute());
 document.querySelector("#close-modal-button").addEventListener("click", closeModal);
 document.querySelector("#cancel-modal-button").addEventListener("click", closeModal);
 elements.form.addEventListener("submit", saveAgent);

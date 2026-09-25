@@ -46,8 +46,11 @@
           <a class="navigation-link" href="#settings"><span aria-hidden="true">⚙</span> Settings</a>
         </nav>
         <div class="sidebar-footer">
-          <span class="status-dot"></span>
-          <span>Workspace ready</span>
+          <div class="sidebar-status">
+            <span class="status-dot"></span>
+            <span>Workspace ready</span>
+          </div>
+          <button class="sidebar-sign-out" id="sign-out-button" type="button">Sign out</button>
         </div>
       </aside>
 
@@ -89,7 +92,6 @@
             <p class="page-description">Create, configure, and manage the voice agents that power your conversations.</p>
           </div>
           <div class="header-actions">
-            <button class="secondary-button" id="sign-out-button" type="button">Sign out</button>
             <button class="primary-button" id="open-create-button" type="button"><span aria-hidden="true">+</span> Create agent</button>
           </div>
         </header>
@@ -135,6 +137,26 @@
           </section>
         </section>
       </main>
+    </div>
+
+    <div class="modal-backdrop" id="call-modal" hidden>
+      <section class="call-panel" role="dialog" aria-modal="true" aria-labelledby="call-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">BROWSER SESSION</p>
+            <h2 id="call-title">Talk to your agent</h2>
+          </div>
+          <span class="badge sleeping" id="call-status">Connecting</span>
+        </div>
+        <p class="page-description" id="call-agent-name">Preparing the browser session…</p>
+        <div class="call-visualizer" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <div id="remote-audio-container" class="remote-audio-container"></div>
+        <p class="form-error" id="call-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button class="secondary-button" id="mute-call-button" type="button" disabled>Mute microphone</button>
+          <button class="danger-button" id="end-call-button" type="button">End call</button>
+        </div>
+      </section>
     </div>
 
     <div class="modal-backdrop" id="agent-modal" hidden>
@@ -195,6 +217,7 @@
 
     <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
     <script src="app.js" defer></script>
   </body>
 </html>

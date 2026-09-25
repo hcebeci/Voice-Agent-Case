@@ -1,3 +1,4 @@
+import json
 import logging
 import textwrap
 
@@ -20,11 +21,11 @@ load_dotenv(".env.local")
 
 
 class Assistant(Agent):
-    def __init__(self) -> None:
+    def __init__(self, instructions: str, model: str) -> None:
         super().__init__(
             # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
             # See all available models at https://docs.livekit.io/agents/models/llm/
-            llm=inference.LLM(model="google/gemma-4-31b-it"),
+            llm=inference.LLM(model=model),
             # To use a realtime model instead of a voice pipeline, replace the LLM
             # with a realtime model and remove the STT/TTS from the AgentSession
             # (Note: This is for OpenAI GPT-Live, the recommended speech-to-speech
@@ -34,8 +35,12 @@ class Assistant(Agent):
             # 3. Add `from livekit.plugins import openai` to the top of this file
             # 4. Replace the llm argument with:
             #    llm=openai.realtime.GPTLiveModel(voice="marin"),
-            instructions=textwrap.dedent(
-                """\
+            instructions=textwrap.dedent(instructions),
+        )
+
+
+DEFAULT_INSTRUCTIONS = textwrap.dedent(
+    """\
                 You are a friendly, reliable voice assistant that answers questions, explains topics, and completes tasks with available tools.
 
                 # Output rules
@@ -68,8 +73,7 @@ class Assistant(Agent):
                 - For medical, legal, or financial topics, provide general information only and suggest consulting a qualified professional.
                 - Protect privacy and minimize sensitive data.
                 """
-            ),
-        )
+)
 
     # To add tools, use the @function_tool decorator.
     # Here's an example that adds a simple weather tool.
@@ -92,12 +96,25 @@ class Assistant(Agent):
 server = AgentServer()
 
 
-@server.rtc_session(agent_name="Voice-Agent-Case")
+@server.rtc_session()
 async def my_agent(ctx: JobContext):
+    metadata = {}
+    if ctx.job.metadata:
+        try:
+            metadata = json.loads(ctx.job.metadata)
+        except json.JSONDecodeError:
+            logger.warning("Ignoring invalid LiveKit job metadata for room %s", ctx.room.name)
+
+    instructions = metadata.get("instructions") or DEFAULT_INSTRUCTIONS
+    model = metadata.get("model") or "google/gemma-4-31b-it"
+    session_id = metadata.get("session_id")
+
     # Logging setup
     # Add any other context you want in all log entries here
     ctx.log_context_fields = {
         "room": ctx.room.name,
+        "session_id": session_id or "unknown",
+        "agent_id": metadata.get("agent_id", "unknown"),
     }
 
     # Set up a voice AI pipeline using AssemblyAI, Fish Audio, and the LiveKit turn detector
@@ -135,7 +152,7 @@ async def my_agent(ctx: JobContext):
 
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=Assistant(),
+        agent=Assistant(instructions=instructions, model=model),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(

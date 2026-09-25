@@ -33,6 +33,34 @@ python3 start.py
 
 Then open `http://127.0.0.1:8000`. The UI signs in with Supabase Auth and stores agent definitions through the deployed `agents` Edge Function.
 
+### Browser sessions
+
+The agent cards now start a browser-based LiveKit session. The authenticated
+`livekit-session` Edge Function creates the room token, snapshots the selected
+agent configuration, and dispatches the `Voice-Agent-Case` worker. Add these
+secrets to Supabase Edge Functions before starting a call:
+
+- `LIVEKIT_URL`
+- `LIVEKIT_API_KEY`
+- `LIVEKIT_API_SECRET`
+
+Deploy the function from the repository root:
+
+```console
+npx supabase functions deploy livekit-session
+```
+
+In a second terminal, run the worker from `Livekit-Agents`:
+
+```console
+uv sync
+lk agent dev
+```
+
+Then run `python3 start.py`, open `http://127.0.0.1:8000`, sign in, and choose
+`Start call` on an available agent. The browser requests microphone access and
+the session appears in the dashboard as active until the call ends.
+
 ## Using coding agents
 
 This project is designed to work with coding agents like [Claude Code](https://claude.com/product/claude-code), [Cursor](https://www.cursor.com/), and [Codex](https://openai.com/codex/).
