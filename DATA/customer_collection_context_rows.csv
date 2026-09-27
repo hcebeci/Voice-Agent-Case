@@ -1,0 +1,7 @@
+id,full_name,phone_e164,timezone,account_reference,balance_cents,currency,payment_due_date,late_interest_cents,account_status,credit_reporting_status,credit_reported_at,policy_version,is_test_record,days_overdue,collection_stage
+c011ec70-0000-4000-8000-000000000001,Alper Araras,,Europe/Istanbul,DEMO-001,200000,USD,2026-09-15,2500,open,not_reported,,collection-demo-v1,true,13,early
+c011ec70-0000-4000-8000-000000000002,Alptuğ Tekin,,Europe/Istanbul,DEMO-002,120000,USD,2026-10-04,0,open,not_reported,,collection-demo-v1,true,0,reminder
+c011ec70-0000-4000-8000-000000000003,Hasancan cebeci,,Europe/Istanbul,DEMO-003,150000,USD,2026-09-02,1800,open,not_reported,,collection-demo-v1,true,26,early
+c011ec70-0000-4000-8000-000000000004,Hasancan Çelebi,,Europe/Istanbul,DEMO-004,300000,USD,2026-08-13,9000,open,reported,2026-09-13 07:00:00+00,collection-demo-v1,true,46,medium
+c011ec70-0000-4000-8000-000000000005,Ömer Can Sökmen,,Europe/Istanbul,DEMO-005,60000,USD,2026-09-30,0,open,not_reported,,collection-demo-v1,true,0,reminder
+c011ec70-0000-4000-8000-000000000006,Ömer Can cebeci,,Europe/Istanbul,DEMO-006,250000,USD,2026-07-29,10000,open,reported,2026-08-29 07:00:00+00,collection-demo-v1,true,61,medium
