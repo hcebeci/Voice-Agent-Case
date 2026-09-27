@@ -20,7 +20,7 @@ function missingConfigurationMessage() {
   return "Supabase configuration is missing. Check supabase/.env and restart start.py.";
 }
 
-const pageState = { agents: [], tools: [], editingAgentId: null, editingToolId: null, dashboard: null, liveSession: null, selectedSessionId: null, selectedAgentMetricsId: null, sessionDetailsPollTimer: null, sessionView: "transcript", traceZoom: 1 };
+const pageState = { testCustomers: [], testsLoading: false, testAgentReady: false, callStarting: false, agents: [], tools: [], editingAgentId: null, editingToolId: null, dashboard: null, liveSession: null, selectedSessionId: null, selectedAgentMetricsId: null, sessionDetailsPollTimer: null, sessionView: "transcript", traceZoom: 1 };
 const elements = {
   authScreen: document.querySelector("#auth-screen"),
   appShell: document.querySelector("#app-shell"),
@@ -32,6 +32,13 @@ const elements = {
   signOutButton: document.querySelector("#sign-out-button"),
   dashboardPage: document.querySelector("#dashboard-page"),
   agentsPage: document.querySelector("#agents-page"),
+  testsPage: document.querySelector("#tests-page"),
+  testAgent: document.querySelector("#test-agent"),
+  testCustomer: document.querySelector("#test-customer"),
+  testAgentDetails: document.querySelector("#test-agent-details"),
+  testCustomerDetails: document.querySelector("#test-customer-details"),
+  testsError: document.querySelector("#tests-error"),
+  startTestButton: document.querySelector("#start-test-button"),
   toolsPage: document.querySelector("#tools-page"),
   sessionsPage: document.querySelector("#sessions-page"),
   sessionDetailsPage: document.querySelector("#session-details-page"),
@@ -133,7 +140,7 @@ function showAuthentication() {
 /** Switch between the dashboard, agent list, and session history views. */
 function showPage(pageId) {
   if (pageId !== "session-details-page") stopSessionDetailsPolling();
-  [elements.dashboardPage, elements.agentsPage, elements.toolsPage, elements.sessionsPage, elements.sessionDetailsPage, elements.agentMetricsPage].forEach((page) => {
+  [elements.dashboardPage, elements.agentsPage, elements.toolsPage, elements.testsPage, elements.sessionsPage, elements.sessionDetailsPage, elements.agentMetricsPage].forEach((page) => {
     page.hidden = page.id !== pageId;
   });
   document.querySelectorAll(".navigation-link[data-page]").forEach((link) => {
@@ -200,6 +207,9 @@ async function signIn(event) {
 async function signOut() {
   if (supabaseClient) await supabaseClient.auth.signOut();
   pageState.agents = [];
+  pageState.testCustomers = [];
+  elements.testCustomerDetails.replaceChildren();
+  elements.testAgentDetails.replaceChildren();
   showAuthentication();
 }
 
@@ -416,7 +426,7 @@ async function restoreLastPage() {
     await loadAgentMetrics(hashRoute.slice("agent-metrics/".length));
     return;
   }
-  const hashPage = { dashboard: "dashboard-page", agents: "agents-page", tools: "tools-page", sessions: "sessions-page" }[hashRoute];
+  const hashPage = { dashboard: "dashboard-page", agents: "agents-page", tools: "tools-page", tests: "tests-page", sessions: "sessions-page" }[hashRoute];
   if (hashPage) storedState = { pageId: hashPage };
   if (!storedState?.pageId) return;
   if (storedState.pageId === "session-details-page" && storedState.sessionId) {
@@ -429,6 +439,11 @@ async function restoreLastPage() {
   }
   if (["dashboard-page", "agents-page"].includes(storedState.pageId)) {
     showPage(storedState.pageId);
+    return;
+  }
+  if (storedState.pageId === "tests-page") {
+    showPage("tests-page");
+    await loadTestCases();
     return;
   }
   if (storedState.pageId === "tools-page") {
@@ -822,7 +837,7 @@ function renderAgentList() {
   elements.list.querySelectorAll("[data-action='metrics']").forEach((button) => button.addEventListener("click", () => loadAgentMetrics(button.dataset.agentId)));
   elements.list.querySelectorAll("[data-action='archive']").forEach((button) => button.addEventListener("click", () => archiveAgent(button.dataset.agentId)));
   elements.list.querySelectorAll("[data-action='activate']").forEach((button) => button.addEventListener("click", () => activateAgent(button.dataset.agentId)));
-  elements.list.querySelectorAll("[data-action='call']").forEach((button) => button.addEventListener("click", () => startBrowserSession(button.dataset.agentId)));
+  elements.list.querySelectorAll("[data-action='call']").forEach((button) => button.addEventListener("click", () => openCallSetup(button.dataset.agentId)));
 }
 
 /** Build a card that exposes the agent's purpose and the available actions. */
@@ -851,9 +866,36 @@ async function updateBrowserSessionStatus(sessionId, status) {
   });
 }
 
+/** Normal calls may optionally bind a demo customer without visiting Tests. */
+async function openCallSetup(agentId) {
+  if (pageState.liveSession || pageState.callStarting) return;
+  const modal = document.querySelector("#call-setup-modal");
+  const select = document.querySelector("#call-customer");
+  const error = document.querySelector("#call-setup-error");
+  modal.dataset.agentId = agentId;
+  modal.hidden = false;
+  select.innerHTML = '<option value="">No customer account</option>';
+  clearError(error);
+  try {
+    const response = await callWorkspaceApi("test-cases");
+    if (modal.hidden || modal.dataset.agentId !== agentId) return;
+    select.innerHTML += (response.customers ?? []).map(customer => `<option value="${escapeHtml(customer.id)}">${escapeHtml(customer.full_name)}</option>`).join("");
+  } catch (failure) {
+    showError(error, "Customer accounts could not be loaded. You can still call without an account.");
+  }
+}
+
+document.querySelector("#cancel-call-setup").addEventListener("click", () => { document.querySelector("#call-setup-modal").hidden = true; });
+document.querySelector("#confirm-call-setup").addEventListener("click", () => {
+  const modal = document.querySelector("#call-setup-modal");
+  const customerId = document.querySelector("#call-customer").value;
+  modal.hidden = true;
+  void startBrowserSession(modal.dataset.agentId, {call_direction: "user_calls_agent", ...(customerId ? {customer_id: customerId} : {})});
+});
+
 /** Start a browser microphone session for one available agent. */
-async function startBrowserSession(agentId) {
-  if (pageState.liveSession) return;
+async function startBrowserSession(agentId, options = {}) {
+  if (pageState.liveSession || pageState.callStarting) return;
   const agent = pageState.agents.find((candidate) => candidate.id === agentId);
   if (!agent || agent.runtime_status === "offline") return;
   if (!window.LivekitClient) {
@@ -861,18 +903,27 @@ async function startBrowserSession(agentId) {
     return;
   }
 
+  pageState.callStarting = true;
+  refreshTestButton();
   clearError(elements.callError);
   elements.callModal.hidden = false;
   elements.callAgentName.textContent = `Connecting to ${agent.name}…`;
   elements.callStatus.textContent = "Connecting";
   elements.callStatus.className = "badge sleeping";
   elements.muteCallButton.disabled = true;
+  elements.endCallButton.disabled = true;
 
   try {
     const response = await callWorkspaceApi("livekit-session", "", {
       method: "POST",
-      body: JSON.stringify({ agent_id: agent.id, source: "user_started" }),
+      body: JSON.stringify({ agent_id: agent.id, source: "user_started", ...options }),
     });
+    if (options.customer_id) {
+      const link = document.querySelector("#test-last-session");
+      link.hidden = false;
+      link.href = `#session/${response.session_id}`;
+      link.onclick = (event) => { event.preventDefault(); void loadSessionDetails(response.session_id); };
+    }
     const room = new window.LivekitClient.Room({ adaptiveStream: true, dynacast: true });
     pageState.liveSession = { room, sessionId: response.session_id, muted: false };
 
@@ -884,13 +935,13 @@ async function startBrowserSession(agentId) {
     });
     room.on(window.LivekitClient.RoomEvent.TrackUnsubscribed, (track) => track.detach());
     room.on(window.LivekitClient.RoomEvent.Disconnected, () => {
-      if (pageState.liveSession) void finishBrowserSession("completed", false);
+      if (pageState.liveSession?.room === room) void finishBrowserSession("completed", false);
     });
 
     await room.connect(response.server_url, response.participant_token);
     await room.localParticipant.setMicrophoneEnabled(true);
     await updateBrowserSessionStatus(response.session_id, "active");
-    elements.callAgentName.textContent = `Connected to ${agent.name}. Speak naturally and end the call when you are finished.`;
+    elements.callAgentName.textContent = `Connected to ${agent.name}. ${options.call_direction === "agent_calls_user" ? "The agent will speak first." : "You can speak first."}`;
     elements.callStatus.textContent = "Active";
     elements.callStatus.className = "badge active";
     elements.muteCallButton.disabled = false;
@@ -899,10 +950,17 @@ async function startBrowserSession(agentId) {
   } catch (error) {
     const sessionId = pageState.liveSession?.sessionId;
     if (sessionId) await updateBrowserSessionStatus(sessionId, "failed").catch(() => undefined);
+    const failedRoom = pageState.liveSession?.room;
     pageState.liveSession = null;
+    if (failedRoom) await failedRoom.disconnect().catch(() => undefined);
+    elements.remoteAudioContainer.replaceChildren();
     showError(elements.callError, error.message ?? "Could not start the browser session.");
     elements.callStatus.textContent = "Failed";
     elements.callStatus.className = "badge offline";
+  } finally {
+    pageState.callStarting = false;
+    elements.endCallButton.disabled = false;
+    refreshTestButton();
   }
 }
 
@@ -914,6 +972,7 @@ async function finishBrowserSession(status = "completed", disconnectRoom = true)
     return;
   }
   pageState.liveSession = null;
+  refreshTestButton();
   if (disconnectRoom) await liveSession.room.disconnect();
   await updateBrowserSessionStatus(liveSession.sessionId, status).catch(() => undefined);
   elements.remoteAudioContainer.replaceChildren();
@@ -1015,6 +1074,7 @@ async function saveAgent(event) {
     await loadDashboard();
     await loadTools();
     closeModal();
+    if (!elements.testsPage.hidden) await loadTestCases();
   } catch (error) {
     showError(elements.formError, error.message);
   }
@@ -1181,6 +1241,7 @@ document.querySelectorAll(".navigation-link[data-page]").forEach((link) => {
   link.addEventListener("click", (event) => {
     event.preventDefault();
     showPage(link.dataset.page);
+    if (link.dataset.page === "tests-page") void loadTestCases();
   });
 });
 document.querySelector("#open-create-button").addEventListener("click", openCreateModal);
@@ -1223,9 +1284,86 @@ document.addEventListener("keydown", (event) => {
   if (!elements.toolModal.hidden) closeToolModal();
 });
 
+elements.testCustomer.addEventListener("change", renderTestCustomer);
+elements.testAgent.addEventListener("change", () => void renderTestAgent());
+document.querySelector("#test-call-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (elements.startTestButton.disabled) return;
+  await startBrowserSession(elements.testAgent.value, {
+    customer_id: elements.testCustomer.value,
+    call_direction: document.querySelector('input[name="call_direction"]:checked').value,
+  });
+});
+
 void initialiseApplication();
 
 /** Refresh server-derived runtime badges after webhook-driven lifecycle changes. */
 window.setInterval(() => {
   if (!elements.appShell.hidden) void Promise.all([loadAgents(), loadDashboard(), loadTools()]);
 }, 15000);
+
+
+function refreshTestButton() {
+  elements.startTestButton.disabled = pageState.testsLoading || !pageState.testAgentReady ||
+    !elements.testAgent.value || !elements.testCustomer.value || pageState.callStarting || Boolean(pageState.liveSession);
+}
+
+async function loadTestCases() {
+  pageState.testsLoading = true;
+  refreshTestButton();
+  clearError(elements.testsError);
+  try {
+    const [response] = await Promise.all([callWorkspaceApi("test-cases"), loadAgents()]);
+    pageState.testCustomers = response.customers ?? [];
+    const agentId = elements.testAgent.value;
+    const customerId = elements.testCustomer.value;
+    elements.testAgent.innerHTML = '<option value="">Select an agent</option>' + pageState.agents.filter(a => !a.archived_at).map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`).join("");
+    elements.testCustomer.innerHTML = '<option value="">Select a customer</option>' + pageState.testCustomers.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.full_name)} — ${escapeHtml(c.collection_stage)}</option>`).join("");
+    elements.testAgent.value = agentId;
+    elements.testCustomer.value = customerId;
+    renderTestCustomer();
+    await renderTestAgent();
+    if (!pageState.testCustomers.length) showError(elements.testsError, "No test customers are available. Add fictional customer records first.");
+  } catch (error) {
+    pageState.testAgentReady = false;
+    showError(elements.testsError, error.message || "Could not load test cases.");
+  } finally {
+    pageState.testsLoading = false;
+    refreshTestButton();
+  }
+}
+
+function renderTestCustomer() {
+  const customer = pageState.testCustomers.find(c => c.id === elements.testCustomer.value);
+  if (!customer) {
+    elements.testCustomerDetails.innerHTML = '<p class="session-empty">Select a customer to see their information.</p>';
+  } else {
+    const amount = value => new Intl.NumberFormat('en-US', {style:'currency', currency:customer.currency}).format(value / 100);
+    const fields = [["Name",customer.full_name],["Customer ID",customer.id],["Date of birth",customer.date_of_birth],["Postal code",customer.postal_code],["Current debt",amount(customer.balance_cents)],["Due date",customer.payment_due_date],["Stage",`${customer.collection_stage} · ${customer.days_overdue} days overdue`],["Interest included",amount(customer.late_interest_cents)],["Credit reporting",customer.credit_reporting_status],["Timezone",customer.timezone],["Callback number",customer.phone_e164 || "Not configured"]];
+    elements.testCustomerDetails.innerHTML = `<dl class="test-facts">${fields.map(([label,value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`;
+  }
+  refreshTestButton();
+}
+
+async function renderTestAgent() {
+  const id = elements.testAgent.value;
+  const agent = pageState.agents.find(a => a.id === id);
+  pageState.testAgentReady = false;
+  refreshTestButton();
+  if (!agent) {
+    elements.testAgentDetails.innerHTML = '<p class="session-empty">Select an agent to preview its saved instructions and tools.</p>';
+    return;
+  }
+  elements.testAgentDetails.textContent = "Loading agent configuration…";
+  try {
+    const response = await callWorkspaceApi("tools", `?agent_id=${encodeURIComponent(id)}`);
+    if (id !== elements.testAgent.value) return;
+    const assigned = (response.tools ?? []).filter(t => t.assigned && t.is_enabled);
+    elements.testAgentDetails.innerHTML = `<h3>${escapeHtml(agent.name)}</h3><p class="field-help">${escapeHtml(agent.model)} · ${agent.language === "tr" ? "Turkish" : "English"}</p><h4>Enabled tools</h4><p>${assigned.length ? assigned.map(t => escapeHtml(t.name)).join(" · ") : "No tools assigned"}</p><h4>Saved instructions</h4><pre class="test-instructions">${escapeHtml(agent.instructions || "No instructions saved. The platform's general assistant fallback will be used.")}</pre><button id="edit-test-agent" type="button" class="text-button">Edit agent instructions and tools</button>`;
+    document.querySelector("#edit-test-agent").onclick = () => openEditModal(id);
+    pageState.testAgentReady = true;
+  } catch (error) {
+    if (id === elements.testAgent.value) showError(elements.testsError, error.message);
+  }
+  refreshTestButton();
+}

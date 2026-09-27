@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Create and manage voice agents." />
     <title>Agent Studio</title>
-    <link rel="stylesheet" href="styles.css?v=20260927-7" />
+    <link rel="stylesheet" href="styles.css?v=20260928-2" />
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -46,6 +46,7 @@
           <a class="navigation-link" data-page="tools-page" href="#tools">
             <span aria-hidden="true">◆</span> Tools
           </a>
+          <a class="navigation-link" data-page="tests-page" href="#tests"><span aria-hidden="true">▷</span> Tests</a>
           <a class="navigation-link" href="#settings"><span aria-hidden="true">⚙</span> Settings</a>
         </nav>
         <div class="sidebar-footer">
@@ -129,6 +130,29 @@
           <p id="empty-description">Create your first agent to start shaping a voice experience.</p>
           <button class="secondary-button" id="empty-create-button" type="button">Create your first agent</button>
         </section>
+        </section>
+
+        <section class="page-view" id="tests-page" hidden>
+          <header class="page-header"><div><p class="eyebrow">WORKSPACE / TESTS</p><h1>Test a conversation</h1><p class="page-description">Choose an agent and play a customer in a browser voice call.</p></div></header>
+          <p class="form-error" id="tests-error" role="alert" hidden></p>
+          <div class="test-layout">
+            <form id="test-call-form" class="dashboard-panel test-setup">
+              <p class="eyebrow">CALL SETUP</p><h2>Set up your test</h2>
+              <label class="form-field"><span>Agent</span><select id="test-agent" required><option value="">Select an agent</option></select></label>
+              <label class="form-field"><span>Customer to play</span><select id="test-customer" required><option value="">Select a customer</option></select></label>
+              <fieldset class="test-direction"><legend>Who is calling?</legend>
+                <label><input type="radio" name="call_direction" value="agent_calls_user" checked /><span><strong>Agent calls user</strong><small>The agent opens the conversation.</small></span></label>
+                <label><input type="radio" name="call_direction" value="user_calls_agent" /><span><strong>User calls agent</strong><small>You speak first; the agent listens.</small></span></label>
+              </fieldset>
+              <p class="field-help">Uses your browser microphone. No phone number is dialed.</p>
+              <button id="start-test-button" class="primary-button" type="submit" disabled>Start test call</button>
+              <a id="test-last-session" class="text-button" href="#sessions" hidden>View last test call</a>
+            </form>
+            <div class="test-context">
+              <article class="dashboard-panel"><p class="eyebrow">CUSTOMER INFORMATION</p><h2>Your role in this call</h2><p class="field-help">Fictional test data. Use the birth date and postal code when the agent asks you to verify.</p><div id="test-customer-details" aria-live="polite"><p class="session-empty">Select a customer to see their information.</p></div></article>
+              <article class="dashboard-panel"><p class="eyebrow">AGENT CONFIGURATION</p><h2>What you are testing</h2><div id="test-agent-details" aria-live="polite"><p class="session-empty">Select an agent to preview its saved instructions and tools.</p></div></article>
+            </div>
+          </div>
         </section>
 
         <section class="page-view" id="tools-page" hidden>
@@ -236,6 +260,16 @@
           </section>
         </section>
       </main>
+    </div>
+
+    <div class="modal-backdrop" id="call-setup-modal" hidden>
+      <section class="call-panel" role="dialog" aria-modal="true" aria-labelledby="call-setup-title">
+        <h2 id="call-setup-title">Call your agent</h2>
+        <p class="page-description">You speak first. Select a demo customer to use account tools, or continue without an account for a general conversation.</p>
+        <label class="form-field"><span>Customer account (optional)</span><select id="call-customer"><option value="">No customer account</option></select></label>
+        <p class="form-error" id="call-setup-error" role="alert" hidden></p>
+        <div class="modal-actions"><button class="secondary-button" id="cancel-call-setup" type="button">Cancel</button><button class="primary-button" id="confirm-call-setup" type="button">Call agent</button></div>
+      </section>
     </div>
 
     <div class="modal-backdrop" id="call-modal" hidden>
@@ -361,6 +395,6 @@
     <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
-    <script src="app.js?v=20260927-7" defer></script>
+    <script src="app.js?v=20260928-2" defer></script>
   </body>
 </html>

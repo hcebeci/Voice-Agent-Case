@@ -8,7 +8,8 @@ import pytest
 from livekit.agents import AgentSession, llm
 from test_collection import CUSTOMER
 
-from collection_agent import CollectionAssistant
+from collection import TOOLS
+from collection_agent import ConfiguredAssistant
 from collection_backend import CollectionBackend
 
 
@@ -154,7 +155,13 @@ async def test_sdk_verification_guard_then_complete_commitment():
         ]
     )
     async with AgentSession(llm=model) as session:
-        await session.start(CollectionAssistant(backend=backend))
+        await session.start(
+            ConfiguredAssistant(
+                backend=backend,
+                enabled_tools=TOOLS,
+                instructions="Verify identity before discussing debt. Use the payment tools to record a confirmed promise. Never claim success without a saved receipt.",
+            )
+        )
         await session.run(
             user_input="My birth date is April 12, 1988 and postal code 34000."
         )
@@ -217,7 +224,8 @@ async def test_real_model_verification_correction_and_commitment():
         AgentSession(llm=model) as session,
     ):
         await session.start(
-            CollectionAssistant(
+            ConfiguredAssistant(
+                enabled_tools=TOOLS,
                 backend=backend,
                 instructions="Speak English. Today is September 27, 2026.",
             )
@@ -262,7 +270,13 @@ async def test_interrupted_sdk_review_cannot_authorize_commitment():
         ]
     )
     async with AgentSession(llm=model) as session:
-        await session.start(CollectionAssistant(backend=backend))
+        await session.start(
+            ConfiguredAssistant(
+                backend=backend,
+                enabled_tools=TOOLS,
+                instructions="Verify identity before discussing debt. Use the payment tools to record a confirmed promise. Never claim success without a saved receipt.",
+            )
+        )
         original_say = session.say
 
         def interrupted_say(*args, **kwargs):

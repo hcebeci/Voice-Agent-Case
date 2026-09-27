@@ -1,3 +1,4 @@
+import { assignedExecutionKeys, callDirection } from "./configuration.mjs"
 import { withSupabase } from "npm:@supabase/server"
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "npm:livekit-server-sdk"
 
@@ -5,6 +6,7 @@ type SessionRequest = {
   agent_id?: unknown
   source?: unknown
   customer_id?: unknown
+  call_direction?: unknown
 }
 
 const allowedStatuses = new Set(["connecting", "active", "completed", "failed", "cancelled"])
@@ -33,6 +35,7 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
   const requestBody = await parseSessionRequest(request)
   const agentId = typeof requestBody.agent_id === "string" ? requestBody.agent_id : ""
   const source = requestBody.source ?? "user_started"
+  const direction = callDirection(requestBody.call_direction)
   const customerId = requestBody.customer_id
   if (customerId !== undefined && (typeof customerId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId))) {
     return errorResponse("A valid customer id is required.", 400)
@@ -54,6 +57,11 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
   if (agentError || !agent) return errorResponse("The selected agent could not be found.", 404)
   if (agent.archived_at) return errorResponse("This agent is offline. Activate it before starting a session.", 409)
 
+  const { data: assignments, error: assignmentError } = await context.supabase
+    .from("agent_tools").select("tools(execution_key, is_enabled)").eq("agent_id", agentId)
+  if (assignmentError) return errorResponse("Could not load agent tool assignments.", 503)
+  const enabledTools = assignedExecutionKeys(assignments ?? [])
+
   const livekitUrl = Deno.env.get("LIVEKIT_URL")
   const livekitApiKey = Deno.env.get("LIVEKIT_API_KEY")
   const livekitApiSecret = Deno.env.get("LIVEKIT_API_SECRET")
@@ -63,7 +71,7 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
 
   const sessionId = crypto.randomUUID()
   const roomName = `browser-${sessionId}`
-  const participantIdentity = `user-${context.userClaims.sub}-${sessionId.slice(0, 8)}`
+  const participantIdentity = `user-${context.userClaims.id}-${sessionId.slice(0, 8)}`
   const configurationSnapshot = {
     id: agent.id,
     name: agent.name,
@@ -72,16 +80,19 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
     voice: agent.voice,
     language: agent.language,
     tts_model: agent.tts_model,
+    enabled_tools: enabledTools,
+    customer_id: customerId ?? null,
+    call_direction: direction,
   }
 
   const { error: sessionError } = await context.supabase.from("sessions").insert({
     id: sessionId,
     agent_id: agent.id,
     room_name: roomName,
-    source: "user_started",
+    source: direction === "agent_calls_user" ? "platform_started" : "user_started",
     status: "connecting",
     agent_configuration_snapshot: configurationSnapshot,
-    created_by: context.userClaims.sub,
+    created_by: context.userClaims.id,
   })
 
   if (sessionError) return errorResponse(sessionError.message, 500)
@@ -119,7 +130,9 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
     const dispatchClient = new AgentDispatchClient(apiHost, livekitApiKey, livekitApiSecret)
     await dispatchClient.createDispatch(roomName, "Voice-Agent-Case", {
       metadata: JSON.stringify({
-        collection_mode: Boolean(customerId),
+        customer_bound: Boolean(customerId),
+        enabled_tools: enabledTools,
+        call_direction: direction,
         session_id: sessionId,
         agent_id: agent.id,
         agent_name: agent.name,
@@ -128,7 +141,7 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
         voice: agent.voice,
         language: agent.language,
         tts_model: agent.tts_model,
-        source: "user_started",
+        source: direction === "agent_calls_user" ? "platform_started" : "user_started",
       }),
     })
 

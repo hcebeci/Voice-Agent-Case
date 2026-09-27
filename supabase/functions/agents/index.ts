@@ -207,7 +207,7 @@ export default {
         .from("agents")
         .insert({
           ...agentFields,
-          created_by: context.userClaims.sub,
+          created_by: context.userClaims.id,
         })
         .select()
         .single()

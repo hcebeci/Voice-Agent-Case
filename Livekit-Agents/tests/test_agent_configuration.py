@@ -47,3 +47,23 @@ def test_agent_configuration_falls_back_only_when_instructions_are_empty():
     assert language == "en"
     assert tts_model == "inworld/inworld-tts-2"
     assert source == "default"
+
+
+def test_worker_registration_matches_backend_dispatch(monkeypatch):
+    import importlib
+    import agent
+    import dotenv
+    monkeypatch.delenv("LIVEKIT_AGENT_NAME", raising=False)
+    monkeypatch.delenv("LIVEKIT_AGENT_NAME_OVERRIDE", raising=False)
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *args: None)
+    importlib.reload(agent)
+    assert agent.server._agent_name == "Voice-Agent-Case"
+
+
+def test_browser_job_without_configuration_must_not_use_default_persona():
+    import pytest
+    from agent import validate_browser_configuration
+    with pytest.raises(ValueError, match="configuration"):
+        validate_browser_configuration({}, "browser-123e4567-e89b-12d3-a456-426614174000")
+    validate_browser_configuration({"session_id": "123e4567-e89b-12d3-a456-426614174000", "agent_id": "agent-1", "instructions": "Use my instructions"}, "browser-123e4567-e89b-12d3-a456-426614174000")
+    validate_browser_configuration({}, "console")

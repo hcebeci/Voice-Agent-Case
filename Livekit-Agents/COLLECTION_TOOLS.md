@@ -15,21 +15,45 @@ There is no escalation tool, `next_action`, or `retryable` field.
 1. Apply `supabase/migrations/20260927000003_collection_tools.sql` after the
    customer migration. It also registers the four definitions in the tool library.
 2. Deploy the changed `livekit-session` function and restart/deploy the worker.
+   The worker must register as `Voice-Agent-Case`, matching the explicit dispatch
+   name. Its cloud secrets must include `SUPABASE_URL` and `SUPABASE_SECRET_KEY`
+   for account tools and observability; local `.env` files are not deployed.
 3. Send the existing authenticated session endpoint its usual `agent_id` plus
-   `customer_id`. Example body:
+   `customer_id` and `call_direction`. Example body:
 
    ```json
-   {"agent_id":"<agent UUID>","customer_id":"c011ec70-0000-4000-8000-000000000001"}
+   {"agent_id":"<agent UUID>","customer_id":"c011ec70-0000-4000-8000-000000000001","call_direction":"agent_calls_user"}
    ```
 
-The endpoint binds the customer in a worker-only table and sets `collection_mode`
-in server-generated dispatch metadata. Calls without a customer continue using
-the existing generic assistant. No verification answers or account balances are
-placed in dispatch metadata. The test-page selector is a separate UI change.
+The endpoint binds the customer in a worker-only table, resolves enabled tool
+assignments from `agent_tools` and `tools`, and snapshots those execution keys,
+the UI instructions, customer ID and direction. The worker receives only that
+server-generated configuration. Customer selection does not select a persona or
+automatically enable tools. `ConfiguredAssistant` uses the saved UI instructions
+and only the assigned, enabled implementations. Unsupported tools or missing
+payment-tool prerequisites produce an actionable error before room creation.
 
-Collection mode currently uses the fixed four-tool workflow. The tools table is a
-catalog; editable library schemas or agent assignments cannot replace backend
-implementation or its payment rules.
+The agent card's **Start call** opens a normal inbound call setup with an optional
+demo customer. Without a customer, the agent can converse using its saved
+instructions, but account tools are unavailable and it must not collect identity
+answers it cannot verify.
+
+Use **Tests** in the sidebar to select any available agent and one of the six
+fictional customers. The page shows verification answers for role-play, live
+stage, balance, due date, and the agent's saved instructions and enabled tools.
+The authenticated `test-cases` endpoint returns only `is_test_record=true` rows.
+Deploy that function alongside `livekit-session`.
+
+`agent_calls_user` makes the agent greet after the browser joins;
+`user_calls_agent` waits for the user to speak. Both use browser audio and never
+dial phone numbers. Direction is recorded in the configuration snapshot; source
+is `platform_started` for agent-initiated and `user_started` for user-initiated.
+The latest test links to the normal persistent call history.
+
+Browser jobs missing their session configuration fail instead of silently using
+the default assistant. The general-assistant fallback is only for non-browser
+console/simulation jobs. There is no hardcoded collection persona. The identity guard and tool descriptions
+still enforce narrow verification, confirmation, and truthful-result contracts.
 
 ## Trust and state
 

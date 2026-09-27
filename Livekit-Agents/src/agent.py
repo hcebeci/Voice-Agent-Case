@@ -20,7 +20,7 @@ from livekit.agents import (
 )
 from livekit.plugins import ai_coustics
 
-from collection_agent import CollectionAssistant
+from collection_agent import ConfiguredAssistant
 from collection_backend import CollectionBackend
 from observability import ObservabilityClient, TurnTracker
 
@@ -118,6 +118,16 @@ def session_id_from_room_name(room_name: str) -> str | None:
         return None
 
 
+def validate_browser_configuration(metadata, room_name):
+    """Never turn a misrouted UI call into the default assistant."""
+    if room_name.startswith("browser-"):
+        if (metadata.get("session_id") != session_id_from_room_name(room_name)
+                or not metadata.get("agent_id")
+                or not isinstance(metadata.get("instructions"), str)
+                or not metadata["instructions"].strip()):
+            raise ValueError("Browser session configuration is missing or invalid")
+
+
 def resolve_agent_configuration(
     metadata: dict[str, Any],
 ) -> tuple[str, str, str, str, str]:
@@ -147,12 +157,22 @@ def resolve_agent_configuration(
 
 
 
+async def start_call_direction(session, direction):
+    """Outbound browser tests greet; inbound tests wait for the caller."""
+    if direction == "agent_calls_user":
+        session.generate_reply(
+            instructions="You initiated this call and the customer has answered. Open the conversation according to your configured instructions. Do not disclose unverified account details.",
+            tool_choice="none",
+        )
+
+
 server = AgentServer()
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name="Voice-Agent-Case")
 async def my_agent(ctx: JobContext):
     metadata = parse_job_metadata(ctx.job.metadata, ctx.room.name)
+    validate_browser_configuration(metadata, ctx.room.name)
     instructions, model, language, tts_model, instruction_source = resolve_agent_configuration(metadata)
     session_id = metadata.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -199,8 +219,10 @@ async def my_agent(ctx: JobContext):
         task.add_done_callback(background_tasks.discard)
         return task
 
+    enabled_tools = metadata.get("enabled_tools", [])
+    verification_required = bool(set(enabled_tools) & {"verify_identity", "evaluate_offer", "create_payment_commitment"})
     collection_backend = None
-    if metadata.get("collection_mode") is True:
+    if metadata.get("customer_bound") is True:
         if not (session_id and supabase_url and supabase_secret_key):
             raise RuntimeError("Collection calls require a trusted database session")
         collection_backend = CollectionBackend(session_id, supabase_url, supabase_secret_key)
@@ -250,13 +272,13 @@ async def my_agent(ctx: JobContext):
 
         @session.on("user_input_transcribed")
         def on_user_input_transcribed(event):
-            if collection_backend and not collection_backend.verified:
+            if verification_required and collection_backend and not collection_backend.verified:
                 event = event.model_copy(update={"transcript": "[verification turn redacted]"})
             turn_tracker.on_user_transcript(event)
 
         @session.on("conversation_item_added")
         def on_conversation_item_added(event):
-            if collection_backend and not collection_backend.verified:
+            if verification_required and collection_backend and not collection_backend.verified:
                 event = event.model_copy(update={"item": event.item.model_copy(update={"content": ["[verification turn redacted]"]})})
             turn_tracker.on_conversation_item(event)
 
@@ -295,9 +317,9 @@ async def my_agent(ctx: JobContext):
 
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=(CollectionAssistant(backend=collection_backend, instructions=instructions,
-                                   language=language, llm=inference.LLM(model=model))
-               if collection_backend else Assistant(instructions=instructions, model=model)),
+        agent=ConfiguredAssistant(backend=collection_backend, instructions=instructions,
+                                  enabled_tools=metadata.get("enabled_tools", []),
+                                  language=language, llm=inference.LLM(model=model)),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
@@ -321,6 +343,9 @@ async def my_agent(ctx: JobContext):
 
     # Join the room and connect to the user
     await ctx.connect()
+    if metadata.get("call_direction") == "agent_calls_user":
+        await ctx.wait_for_participant()
+        await start_call_direction(session, "agent_calls_user")
 
 
 if __name__ == "__main__":
