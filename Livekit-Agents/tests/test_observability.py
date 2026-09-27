@@ -176,3 +176,17 @@ def test_tool_lifecycle_records_success_duration():
 
     assert [name for name, _ in client.events] == ["tool.started", "tool.succeeded"]
     assert client.events[1][1]["payload"]["duration_ms"] == 2500
+
+
+def test_verification_arguments_redacted_and_structured_errors_mark_failed():
+    client = RecordingClient()
+    tracker = TurnTracker(client)
+    tracker.on_tool_update(event('tool_execution_updated', update=SimpleNamespace(
+        type='tool_call_started', function_call=SimpleNamespace(call_id='private-call',
+        name='verify_identity', arguments='{"date_of_birth":"1988-04-12","postal_code":"34000"}'))))
+    assert client.events[-1][1]['payload']['arguments'] == {'redacted': True}
+    tracker.on_tool_update(event('tool_execution_updated', update=SimpleNamespace(
+        type='tool_call_ended', call_id='private-call', status='success',
+        message='{"status":"error","code":"SERVICE_UNAVAILABLE"}')))
+    assert client.events[-1][0] == 'tool.failed'
+    assert '1988-04-12' not in str(client.events)

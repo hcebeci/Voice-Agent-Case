@@ -17,11 +17,12 @@ def test_browser_room_name_recovers_uuid_session_id():
 
 
 def test_agent_configuration_uses_dispatch_instructions_when_present():
-    instructions, model, language, source = resolve_agent_configuration(
+    instructions, model, language, tts_model, source = resolve_agent_configuration(
         {
             "instructions": "  Answer in one sentence.  ",
             "model": "  model-x  ",
             "language": "tr",
+            "tts_model": "inworld/inworld-tts-2",
         }
     )
 
@@ -31,11 +32,12 @@ def test_agent_configuration_uses_dispatch_instructions_when_present():
     )
     assert model == "model-x"
     assert language == "tr"
+    assert tts_model == "inworld/inworld-tts-2"
     assert source == "job_metadata"
 
 
 def test_agent_configuration_falls_back_only_when_instructions_are_empty():
-    instructions, model, language, source = resolve_agent_configuration({"instructions": "  "})
+    instructions, model, language, tts_model, source = resolve_agent_configuration({"instructions": "  "})
 
     assert instructions == (
         "Respond in English unless the user explicitly asks to switch languages.\n\n"
@@ -43,4 +45,5 @@ def test_agent_configuration_falls_back_only_when_instructions_are_empty():
     )
     assert model == "google/gemma-4-31b-it"
     assert language == "en"
+    assert tts_model == "inworld/inworld-tts-2"
     assert source == "default"

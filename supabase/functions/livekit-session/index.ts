@@ -4,6 +4,7 @@ import { AccessToken, AgentDispatchClient, RoomServiceClient } from "npm:livekit
 type SessionRequest = {
   agent_id?: unknown
   source?: unknown
+  customer_id?: unknown
 }
 
 const allowedStatuses = new Set(["connecting", "active", "completed", "failed", "cancelled"])
@@ -32,13 +33,21 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
   const requestBody = await parseSessionRequest(request)
   const agentId = typeof requestBody.agent_id === "string" ? requestBody.agent_id : ""
   const source = requestBody.source ?? "user_started"
+  const customerId = requestBody.customer_id
+  if (customerId !== undefined && (typeof customerId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId))) {
+    return errorResponse("A valid customer id is required.", 400)
+  }
+  if (customerId) {
+    const { data: customer, error } = await context.supabaseAdmin.from("customers").select("id").eq("id", customerId).maybeSingle()
+    if (error || !customer) return errorResponse("Customer not found.", 404)
+  }
 
   if (!agentId) return errorResponse("An agent id is required.", 400)
   if (source !== "user_started") return errorResponse("Only user_started sessions are supported in the browser MVP.", 400)
 
   const { data: agent, error: agentError } = await context.supabase
     .from("agents")
-    .select("id, name, instructions, model, voice, language, archived_at")
+    .select("id, name, instructions, model, voice, language, tts_model, archived_at")
     .eq("id", agentId)
     .single()
 
@@ -62,6 +71,7 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
     model: agent.model,
     voice: agent.voice,
     language: agent.language,
+    tts_model: agent.tts_model,
   }
 
   const { error: sessionError } = await context.supabase.from("sessions").insert({
@@ -77,6 +87,10 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
   if (sessionError) return errorResponse(sessionError.message, 500)
 
   try {
+    if (customerId) {
+      const { error } = await context.supabaseAdmin.from("collection_sessions").insert({ session_id: sessionId, customer_id: customerId })
+      if (error) throw new Error("Could not bind customer to session.")
+    }
     const participantToken = new AccessToken(livekitApiKey, livekitApiSecret, {
       identity: participantIdentity,
       name: "User",
@@ -105,6 +119,7 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
     const dispatchClient = new AgentDispatchClient(apiHost, livekitApiKey, livekitApiSecret)
     await dispatchClient.createDispatch(roomName, "Voice-Agent-Case", {
       metadata: JSON.stringify({
+        collection_mode: Boolean(customerId),
         session_id: sessionId,
         agent_id: agent.id,
         agent_name: agent.name,
@@ -112,6 +127,7 @@ async function createBrowserSession(request: Request, context: any): Promise<Res
         model: agent.model,
         voice: agent.voice,
         language: agent.language,
+        tts_model: agent.tts_model,
         source: "user_started",
       }),
     })

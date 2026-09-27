@@ -20,6 +20,8 @@ from livekit.agents import (
 )
 from livekit.plugins import ai_coustics
 
+from collection_agent import CollectionAssistant
+from collection_backend import CollectionBackend
 from observability import ObservabilityClient, TurnTracker
 
 logger = logging.getLogger("agent")
@@ -118,8 +120,8 @@ def session_id_from_room_name(room_name: str) -> str | None:
 
 def resolve_agent_configuration(
     metadata: dict[str, Any],
-) -> tuple[str, str, str, str]:
-    """Return instructions, model, language, and the instruction source label."""
+) -> tuple[str, str, str, str, str]:
+    """Return instructions, LLM model, language, TTS model, and source label."""
 
     raw_instructions = metadata.get("instructions")
     instructions = raw_instructions.strip() if isinstance(raw_instructions, str) else ""
@@ -132,30 +134,17 @@ def resolve_agent_configuration(
     language = metadata.get("language")
     if not isinstance(language, str) or language not in {"en", "tr"}:
         language = "en"
+    tts_model = metadata.get("tts_model")
+    if not isinstance(tts_model, str) or tts_model not in {"cartesia/sonic-3", "inworld/inworld-tts-2"}:
+        tts_model = "inworld/inworld-tts-2"
 
     language_name = "Turkish" if language == "tr" else "English"
     instructions = (
         f"Respond in {language_name} unless the user explicitly asks to switch languages.\n\n"
         f"{instructions}"
     )
-    return instructions, model, language, instruction_source
+    return instructions, model, language, tts_model, instruction_source
 
-    # To add tools, use the @function_tool decorator.
-    # Here's an example that adds a simple weather tool.
-    # You also have to add `from livekit.agents import function_tool, RunContext` to the top of this file
-    # @function_tool
-    # async def lookup_weather(self, context: RunContext, location: str):
-    #     """Use this tool to look up current weather information in the given location.
-    #
-    #     If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
-    #
-    #     Args:
-    #         location: The location to look up weather information for (e.g. city name)
-    #     """
-    #
-    #     logger.info(f"Looking up weather for {location}")
-    #
-    #     return "sunny with a temperature of 70 degrees."
 
 
 server = AgentServer()
@@ -164,7 +153,7 @@ server = AgentServer()
 @server.rtc_session()
 async def my_agent(ctx: JobContext):
     metadata = parse_job_metadata(ctx.job.metadata, ctx.room.name)
-    instructions, model, language, instruction_source = resolve_agent_configuration(metadata)
+    instructions, model, language, tts_model, instruction_source = resolve_agent_configuration(metadata)
     session_id = metadata.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         session_id = session_id_from_room_name(ctx.room.name)
@@ -179,6 +168,7 @@ async def my_agent(ctx: JobContext):
             "instruction_source": instruction_source,
             "instruction_length": len(instructions),
             "language": language,
+            "tts_model": tts_model,
         },
     )
 
@@ -209,7 +199,18 @@ async def my_agent(ctx: JobContext):
         task.add_done_callback(background_tasks.discard)
         return task
 
-    # Set up a voice AI pipeline using AssemblyAI, Fish Audio, and the LiveKit turn detector
+    collection_backend = None
+    if metadata.get("collection_mode") is True:
+        if not (session_id and supabase_url and supabase_secret_key):
+            raise RuntimeError("Collection calls require a trusted database session")
+        collection_backend = CollectionBackend(session_id, supabase_url, supabase_secret_key)
+        snapshot = await collection_backend.snapshot("startup")
+        if not snapshot or snapshot["session_status"] not in {"connecting", "active"}:
+            await collection_backend.close()
+            raise RuntimeError("Collection session is not active or bound to a customer")
+        ctx.add_shutdown_callback(collection_backend.close)
+
+    # Set up a voice AI pipeline using AssemblyAI, the selected LiveKit Inference TTS model, and the turn detector
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
         # See all available models at https://docs.livekit.io/agents/models/stt/
@@ -217,8 +218,8 @@ async def my_agent(ctx: JobContext):
         # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
         # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
         tts=inference.TTS(
-            model="cartesia/sonic-3",
-            voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+            model=tts_model,
+            voice="Ashley" if tts_model == "inworld/inworld-tts-2" else "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
             language=language,
         ),
         turn_handling=TurnHandlingOptions(
@@ -228,12 +229,12 @@ async def my_agent(ctx: JobContext):
             # AgentSession supplies the required VAD automatically.
             # See more at https://docs.livekit.io/agents/build/turns
             turn_detection=inference.TurnDetector(),
-            # Interruption handling is disabled for the MVP; a later iteration
-            # can add interruption events and metrics to the observability contract.
-            interruption={"enabled": False},
+            # Collection proposal reviews must be interruptible. Disable speculative
+            # generation for collection calls so tools use completed customer turns.
+            interruption={"enabled": bool(collection_backend)},
             # allow the LLM to generate a response while waiting for the end of turn
             # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
-            preemptive_generation={"enabled": True},
+            preemptive_generation={"enabled": not bool(collection_backend)},
         ),
         # Expressive mode injects the TTS provider's markup guide into the LLM prompt, so the model
         # emits inline delivery tags (emotion, pacing, non-verbal sounds) that the TTS renders and
@@ -249,10 +250,14 @@ async def my_agent(ctx: JobContext):
 
         @session.on("user_input_transcribed")
         def on_user_input_transcribed(event):
+            if collection_backend and not collection_backend.verified:
+                event = event.model_copy(update={"transcript": "[verification turn redacted]"})
             turn_tracker.on_user_transcript(event)
 
         @session.on("conversation_item_added")
         def on_conversation_item_added(event):
+            if collection_backend and not collection_backend.verified:
+                event = event.model_copy(update={"item": event.item.model_copy(update={"content": ["[verification turn redacted]"]})})
             turn_tracker.on_conversation_item(event)
 
         @session.on("agent_state_changed")
@@ -290,7 +295,9 @@ async def my_agent(ctx: JobContext):
 
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=Assistant(instructions=instructions, model=model),
+        agent=(CollectionAssistant(backend=collection_backend, instructions=instructions,
+                                   language=language, llm=inference.LLM(model=model))
+               if collection_backend else Assistant(instructions=instructions, model=model)),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(

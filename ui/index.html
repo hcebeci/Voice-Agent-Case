@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Create and manage voice agents." />
     <title>Agent Studio</title>
-    <link rel="stylesheet" href="styles.css?v=20260927-6" />
+    <link rel="stylesheet" href="styles.css?v=20260927-7" />
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -42,6 +42,9 @@
           </a>
           <a class="navigation-link" data-page="agents-page" href="#agents">
             <span aria-hidden="true">▦</span> Agents
+          </a>
+          <a class="navigation-link" data-page="tools-page" href="#tools">
+            <span aria-hidden="true">◆</span> Tools
           </a>
           <a class="navigation-link" href="#settings"><span aria-hidden="true">⚙</span> Settings</a>
         </nav>
@@ -126,6 +129,25 @@
           <p id="empty-description">Create your first agent to start shaping a voice experience.</p>
           <button class="secondary-button" id="empty-create-button" type="button">Create your first agent</button>
         </section>
+        </section>
+
+        <section class="page-view" id="tools-page" hidden>
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">WORKSPACE / TOOLS</p>
+              <h1>Shared tools</h1>
+              <p class="page-description">Define the backend capabilities agents may use. Execution is connected in the next Stage 3 slice.</p>
+            </div>
+            <button class="primary-button" id="open-tool-create-button" type="button"><span aria-hidden="true">+</span> Create tool</button>
+          </header>
+          <p class="page-error" id="tool-page-error" role="alert" hidden></p>
+          <section id="tool-list" class="tool-grid" aria-live="polite"></section>
+          <section id="tool-empty-state" class="empty-state" hidden>
+            <div class="empty-icon" aria-hidden="true">◆</div>
+            <h2>No tools yet</h2>
+            <p>Create a definition now, then connect its backend executor later.</p>
+            <button class="secondary-button" id="empty-tool-create-button" type="button">Create your first tool</button>
+          </section>
         </section>
 
         <section class="page-view" id="sessions-page" hidden>
@@ -289,6 +311,20 @@
                 <small>Controls speech recognition, responses, and voice output.</small>
               </label>
             </div>
+            <label class="form-field">
+              <span>Text-to-speech model</span>
+              <select id="agent-tts-model">
+                <option value="cartesia/sonic-3">Cartesia Sonic 3</option>
+                <option value="inworld/inworld-tts-2">Inworld TTS 2</option>
+              </select>
+              <small>Both options use LiveKit Inference. Inworld TTS 2 uses the default Ashley voice.</small>
+            </label>
+          </div>
+
+          <div class="form-section">
+            <h3>Tools</h3>
+            <p class="section-description">Choose shared tools this agent may request. Assignment only records permission; execution is added in the next slice.</p>
+            <div id="agent-tool-selection" class="agent-tool-selection"></div>
           </div>
 
           <p class="form-error" id="form-error" role="alert" hidden></p>
@@ -300,9 +336,31 @@
       </section>
     </div>
 
+    <div class="modal-backdrop" id="tool-modal" hidden>
+      <section class="agent-modal tool-modal" role="dialog" aria-modal="true" aria-labelledby="tool-modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow" id="tool-modal-eyebrow">NEW TOOL</p>
+            <h2 id="tool-modal-title">Create a tool</h2>
+          </div>
+          <button class="icon-button" id="close-tool-modal-button" type="button" aria-label="Close tool dialog">×</button>
+        </div>
+        <form id="tool-form" novalidate>
+          <input id="tool-id" type="hidden" />
+          <label class="form-field"><span>Name <strong>*</strong></span><input id="tool-name" type="text" maxlength="80" placeholder="e.g. Current time" required /><small>Human-readable name shown in the tool library.</small></label>
+          <label class="form-field"><span>Description</span><textarea id="tool-description" rows="3" maxlength="240" placeholder="What does this backend capability do?"></textarea></label>
+          <label class="form-field"><span>Execution key <strong>*</strong></span><input id="tool-execution-key" type="text" maxlength="80" placeholder="get_current_time" required /><small>Stable lowercase key used by the future backend dispatcher.</small></label>
+          <label class="form-field"><span>Input schema</span><textarea id="tool-input-schema" rows="7" spellcheck="false">{}</textarea><small>JSON object describing the arguments accepted by the tool.</small></label>
+          <label class="checkbox-field"><input id="tool-enabled" type="checkbox" checked /><span>Enabled for assignment</span></label>
+          <p class="form-error" id="tool-form-error" role="alert" hidden></p>
+          <div class="modal-actions"><button class="secondary-button" id="cancel-tool-modal-button" type="button">Cancel</button><button class="primary-button" type="submit">Save tool</button></div>
+        </form>
+      </section>
+    </div>
+
     <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
-    <script src="app.js?v=20260927-6" defer></script>
+    <script src="app.js?v=20260927-7" defer></script>
   </body>
 </html>

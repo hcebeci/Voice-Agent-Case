@@ -26,6 +26,7 @@ create table if not exists public.agents (
   model text not null,
   voice text,
   language text not null default 'en',
+  tts_model text not null default 'inworld/inworld-tts-2' check (tts_model in ('cartesia/sonic-3', 'inworld/inworld-tts-2')),
   archived_at timestamptz,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default timezone('utc', now()),

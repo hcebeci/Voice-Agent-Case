@@ -20,7 +20,7 @@ function missingConfigurationMessage() {
   return "Supabase configuration is missing. Check supabase/.env and restart start.py.";
 }
 
-const pageState = { agents: [], editingAgentId: null, dashboard: null, liveSession: null, selectedSessionId: null, selectedAgentMetricsId: null, sessionDetailsPollTimer: null, sessionView: "transcript", traceZoom: 1 };
+const pageState = { agents: [], tools: [], editingAgentId: null, editingToolId: null, dashboard: null, liveSession: null, selectedSessionId: null, selectedAgentMetricsId: null, sessionDetailsPollTimer: null, sessionView: "transcript", traceZoom: 1 };
 const elements = {
   authScreen: document.querySelector("#auth-screen"),
   appShell: document.querySelector("#app-shell"),
@@ -32,6 +32,7 @@ const elements = {
   signOutButton: document.querySelector("#sign-out-button"),
   dashboardPage: document.querySelector("#dashboard-page"),
   agentsPage: document.querySelector("#agents-page"),
+  toolsPage: document.querySelector("#tools-page"),
   sessionsPage: document.querySelector("#sessions-page"),
   sessionDetailsPage: document.querySelector("#session-details-page"),
   agentMetricsPage: document.querySelector("#agent-metrics-page"),
@@ -91,6 +92,7 @@ const elements = {
   instructions: document.querySelector("#agent-instructions"),
   model: document.querySelector("#agent-model"),
   language: document.querySelector("#agent-language"),
+  ttsModel: document.querySelector("#agent-tts-model"),
   callModal: document.querySelector("#call-modal"),
   callStatus: document.querySelector("#call-status"),
   callAgentName: document.querySelector("#call-agent-name"),
@@ -98,6 +100,21 @@ const elements = {
   muteCallButton: document.querySelector("#mute-call-button"),
   endCallButton: document.querySelector("#end-call-button"),
   remoteAudioContainer: document.querySelector("#remote-audio-container"),
+  toolList: document.querySelector("#tool-list"),
+  toolEmptyState: document.querySelector("#tool-empty-state"),
+  toolPageError: document.querySelector("#tool-page-error"),
+  toolModal: document.querySelector("#tool-modal"),
+  toolForm: document.querySelector("#tool-form"),
+  toolFormError: document.querySelector("#tool-form-error"),
+  toolId: document.querySelector("#tool-id"),
+  toolName: document.querySelector("#tool-name"),
+  toolDescription: document.querySelector("#tool-description"),
+  toolExecutionKey: document.querySelector("#tool-execution-key"),
+  toolInputSchema: document.querySelector("#tool-input-schema"),
+  toolEnabled: document.querySelector("#tool-enabled"),
+  toolModalEyebrow: document.querySelector("#tool-modal-eyebrow"),
+  toolModalTitle: document.querySelector("#tool-modal-title"),
+  agentToolSelection: document.querySelector("#agent-tool-selection"),
 };
 
 /** Display the authenticated workspace and hide the sign-in form. */
@@ -116,7 +133,7 @@ function showAuthentication() {
 /** Switch between the dashboard, agent list, and session history views. */
 function showPage(pageId) {
   if (pageId !== "session-details-page") stopSessionDetailsPolling();
-  [elements.dashboardPage, elements.agentsPage, elements.sessionsPage, elements.sessionDetailsPage, elements.agentMetricsPage].forEach((page) => {
+  [elements.dashboardPage, elements.agentsPage, elements.toolsPage, elements.sessionsPage, elements.sessionDetailsPage, elements.agentMetricsPage].forEach((page) => {
     page.hidden = page.id !== pageId;
   });
   document.querySelectorAll(".navigation-link[data-page]").forEach((link) => {
@@ -239,6 +256,55 @@ async function callWorkspaceApi(functionName, path = "", options = {}) {
   return responseBody;
 }
 
+/** Load the shared tool library or one agent's assignment state. */
+async function loadTools(agentId = null) {
+  try {
+    const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : "";
+    const response = await callWorkspaceApi("tools", query);
+    if (agentId) return response.tools ?? [];
+    pageState.tools = response.tools ?? [];
+    renderTools();
+    return pageState.tools;
+  } catch (error) {
+    if (agentId) throw error;
+    showError(elements.toolPageError ?? elements.pageError, error.message);
+    return [];
+  }
+}
+
+/** Render reusable backend capabilities as cards in the shared library. */
+function renderTools() {
+  if (!elements.toolList) return;
+  const tools = pageState.tools;
+  elements.toolList.innerHTML = tools.map((tool) => {
+    const status = tool.is_enabled ? "Enabled" : "Disabled";
+    return `<article class="tool-card"><div class="tool-card-header"><div><p class="eyebrow">SHARED TOOL</p><h2>${escapeHtml(tool.name)}</h2></div><span class="badge ${tool.is_enabled ? "sleeping" : "offline"}">${status}</span></div><p class="agent-description">${escapeHtml(tool.description || "No description yet.")}</p><div class="tool-card-meta"><span><strong>Key</strong> ${escapeHtml(tool.execution_key)}</span><span><strong>Updated</strong> ${escapeHtml(formatDateTime(tool.updated_at))}</span></div><details class="tool-schema"><summary>Input schema</summary><pre>${escapeHtml(JSON.stringify(tool.input_schema ?? {}, null, 2))}</pre></details><div class="card-actions"><button class="text-button" data-tool-action="edit" data-tool-id="${escapeHtml(tool.id)}" type="button">Edit</button><button class="text-button" data-tool-action="toggle" data-tool-id="${escapeHtml(tool.id)}" data-tool-enabled="${String(tool.is_enabled)}" type="button">${tool.is_enabled ? "Disable" : "Enable"}</button></div></article>`;
+  }).join("");
+  elements.toolEmptyState.hidden = tools.length > 0;
+  elements.toolList.querySelectorAll("[data-tool-action='edit']").forEach((button) => button.addEventListener("click", () => openEditToolModal(button.dataset.toolId)));
+  elements.toolList.querySelectorAll("[data-tool-action='toggle']").forEach((button) => button.addEventListener("click", () => void toggleTool(button.dataset.toolId, button.dataset.toolEnabled !== "true")));
+}
+
+/** Render enabled shared tools as assignment checkboxes in the agent editor. */
+function renderAgentToolSelection(tools) {
+  if (!elements.agentToolSelection) return;
+  const enabledTools = tools.filter((tool) => tool.is_enabled);
+  elements.agentToolSelection.innerHTML = enabledTools.length
+    ? enabledTools.map((tool) => `<label class="tool-option"><input type="checkbox" data-agent-tool-id="${escapeHtml(tool.id)}" ${tool.assigned ? "checked" : ""} /><span><strong>${escapeHtml(tool.name)}</strong><small>${escapeHtml(tool.description || tool.execution_key)}</small></span></label>`).join("")
+    : `<p class="field-help">No enabled shared tools are available yet. Create one from the Tools page.</p>`;
+}
+
+/** Load assignment flags for an agent and show them in the editor. */
+async function loadAgentToolSelection(agentId = null) {
+  const tools = agentId ? await loadTools(agentId) : pageState.tools.map((tool) => ({ ...tool, assigned: false }));
+  renderAgentToolSelection(tools);
+}
+
+/** Read the selected shared tools from the agent editor. */
+function selectedAgentToolAssignments() {
+  return [...elements.agentToolSelection.querySelectorAll("input[data-agent-tool-id]:checked")].map((input) => ({ tool_id: input.dataset.agentToolId, configuration: {} }));
+}
+
 /** Load all sessions for the full-session history page. */
 async function loadAllSessions(agentId = null) {
   try {
@@ -350,7 +416,7 @@ async function restoreLastPage() {
     await loadAgentMetrics(hashRoute.slice("agent-metrics/".length));
     return;
   }
-  const hashPage = { dashboard: "dashboard-page", agents: "agents-page", sessions: "sessions-page" }[hashRoute];
+  const hashPage = { dashboard: "dashboard-page", agents: "agents-page", tools: "tools-page", sessions: "sessions-page" }[hashRoute];
   if (hashPage) storedState = { pageId: hashPage };
   if (!storedState?.pageId) return;
   if (storedState.pageId === "session-details-page" && storedState.sessionId) {
@@ -363,6 +429,11 @@ async function restoreLastPage() {
   }
   if (["dashboard-page", "agents-page"].includes(storedState.pageId)) {
     showPage(storedState.pageId);
+    return;
+  }
+  if (storedState.pageId === "tools-page") {
+    showPage("tools-page");
+    await loadTools();
     return;
   }
   if (storedState.pageId === "sessions-page") {
@@ -769,7 +840,7 @@ function createAgentCardMarkup(agent) {
 
 /** Escape user-entered text before putting it into card markup. */
 function escapeHtml(value) {
-  return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+  return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
 /** Update a LiveKit session's persisted lifecycle status without hiding the call UI. */
@@ -865,13 +936,15 @@ function openCreateModal() {
   elements.form.reset();
   elements.agentId.value = "";
   elements.language.value = "en";
+  elements.ttsModel.value = "inworld/inworld-tts-2";
   elements.modalEyebrow.textContent = "NEW AGENT";
   elements.modalTitle.textContent = "Create an agent";
   showModal();
+  void loadAgentToolSelection();
 }
 
 /** Populate the form with one existing agent for editing. */
-function openEditModal(agentId) {
+async function openEditModal(agentId) {
   const agent = pageState.agents.find((candidate) => candidate.id === agentId);
   if (!agent) return;
   pageState.editingAgentId = agent.id;
@@ -881,9 +954,15 @@ function openEditModal(agentId) {
   elements.instructions.value = agent.instructions;
   elements.model.value = agent.model;
   elements.language.value = agent.language || "en";
+  elements.ttsModel.value = agent.tts_model || "inworld/inworld-tts-2";
   elements.modalEyebrow.textContent = "EDIT AGENT";
   elements.modalTitle.textContent = "Edit agent";
   showModal();
+  try {
+    await loadAgentToolSelection(agent.id);
+  } catch (error) {
+    showError(elements.formError, error.message);
+  }
 }
 
 /** Display the dialog and focus the first meaningful field. */
@@ -916,19 +995,120 @@ async function saveAgent(event) {
     instructions,
     model: elements.model.value,
     language: elements.language.value,
+    tts_model: elements.ttsModel.value,
   };
   const isEditing = Boolean(pageState.editingAgentId);
   const requestPath = isEditing ? `?id=${encodeURIComponent(pageState.editingAgentId)}` : "";
   try {
-    await callAgentsApi(requestPath, {
+    const response = await callAgentsApi(requestPath, {
       method: isEditing ? "PATCH" : "POST",
       body: JSON.stringify(agentDetails),
     });
+    const savedAgentId = response.agent?.id ?? pageState.editingAgentId;
+    if (savedAgentId) {
+      await callWorkspaceApi("tools", `?agent_id=${encodeURIComponent(savedAgentId)}`, {
+        method: "PUT",
+        body: JSON.stringify({ assignments: selectedAgentToolAssignments() }),
+      });
+    }
     await loadAgents();
     await loadDashboard();
+    await loadTools();
     closeModal();
   } catch (error) {
     showError(elements.formError, error.message);
+  }
+}
+
+/** Open the shared-tool form with safe defaults for a new definition. */
+function openCreateToolModal() {
+  pageState.editingToolId = null;
+  elements.toolForm.reset();
+  elements.toolId.value = "";
+  elements.toolInputSchema.value = "{}";
+  elements.toolEnabled.checked = true;
+  elements.toolModalEyebrow.textContent = "NEW TOOL";
+  elements.toolModalTitle.textContent = "Create a tool";
+  clearError(elements.toolFormError);
+  elements.toolModal.hidden = false;
+  elements.toolName.focus();
+}
+
+/** Populate the shared-tool form for an existing definition. */
+function openEditToolModal(toolId) {
+  const tool = pageState.tools.find((candidate) => candidate.id === toolId);
+  if (!tool) return;
+  pageState.editingToolId = tool.id;
+  elements.toolId.value = tool.id;
+  elements.toolName.value = tool.name;
+  elements.toolDescription.value = tool.description ?? "";
+  elements.toolExecutionKey.value = tool.execution_key;
+  elements.toolInputSchema.value = JSON.stringify(tool.input_schema ?? {}, null, 2);
+  elements.toolEnabled.checked = Boolean(tool.is_enabled);
+  elements.toolModalEyebrow.textContent = "EDIT TOOL";
+  elements.toolModalTitle.textContent = "Edit tool";
+  clearError(elements.toolFormError);
+  elements.toolModal.hidden = false;
+  elements.toolName.focus();
+}
+
+/** Close the shared-tool dialog. */
+function closeToolModal() {
+  elements.toolModal.hidden = true;
+  clearError(elements.toolFormError);
+}
+
+/** Validate and save a shared tool definition through the authenticated API. */
+async function saveTool(event) {
+  event.preventDefault();
+  clearError(elements.toolFormError);
+  const name = elements.toolName.value.trim();
+  const executionKey = elements.toolExecutionKey.value.trim();
+  if (!name || !executionKey) {
+    showError(elements.toolFormError, "Add a tool name and execution key before saving.");
+    return;
+  }
+  let inputSchema;
+  try {
+    inputSchema = JSON.parse(elements.toolInputSchema.value || "{}");
+  } catch {
+    showError(elements.toolFormError, "Input schema must contain valid JSON.");
+    return;
+  }
+  if (!inputSchema || typeof inputSchema !== "object" || Array.isArray(inputSchema)) {
+    showError(elements.toolFormError, "Input schema must be a JSON object.");
+    return;
+  }
+  const toolDetails = {
+    name,
+    description: elements.toolDescription.value.trim(),
+    execution_key: executionKey,
+    input_schema: inputSchema,
+    is_enabled: elements.toolEnabled.checked,
+  };
+  const isEditing = Boolean(pageState.editingToolId);
+  try {
+    await callWorkspaceApi("tools", isEditing ? `?id=${encodeURIComponent(pageState.editingToolId)}` : "", {
+      method: isEditing ? "PATCH" : "POST",
+      body: JSON.stringify(toolDetails),
+    });
+    await loadTools();
+    closeToolModal();
+  } catch (error) {
+    showError(elements.toolFormError, error.message);
+  }
+}
+
+/** Toggle availability without deleting a shared tool definition. */
+async function toggleTool(toolId, enabled) {
+  try {
+    await callWorkspaceApi("tools", `?id=${encodeURIComponent(toolId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_enabled: enabled }),
+    });
+    await loadTools();
+  } catch (error) {
+    showError(elements.toolPageError, error.message);
   }
 }
 
@@ -978,7 +1158,7 @@ async function initialiseApplication() {
   supabaseClient.auth.onAuthStateChange((event, session) => {
     if (session) {
       showApplication();
-      void Promise.all([loadAgents(), loadDashboard()]);
+      void Promise.all([loadAgents(), loadDashboard(), loadTools()]);
       if (event === "INITIAL_SESSION") restoreInitialRoute();
     } else {
       showAuthentication();
@@ -990,7 +1170,7 @@ async function initialiseApplication() {
     showError(elements.authError, error.message);
   } else if (data.session) {
     showApplication();
-    await Promise.all([loadAgents(), loadDashboard()]);
+    await Promise.all([loadAgents(), loadDashboard(), loadTools()]);
     restoreInitialRoute();
   }
 }
@@ -1006,6 +1186,8 @@ document.querySelectorAll(".navigation-link[data-page]").forEach((link) => {
 document.querySelector("#open-create-button").addEventListener("click", openCreateModal);
 elements.dashboardCreateButton.addEventListener("click", openCreateModal);
 document.querySelector("#empty-create-button").addEventListener("click", openCreateModal);
+document.querySelector("#open-tool-create-button").addEventListener("click", openCreateToolModal);
+document.querySelector("#empty-tool-create-button").addEventListener("click", openCreateToolModal);
 elements.seeAllSessionsButton.addEventListener("click", async () => {
   showPage("sessions-page");
   await loadAllSessions();
@@ -1028,14 +1210,22 @@ elements.muteCallButton.addEventListener("click", () => void toggleCallMute());
 document.querySelector("#close-modal-button").addEventListener("click", closeModal);
 document.querySelector("#cancel-modal-button").addEventListener("click", closeModal);
 elements.form.addEventListener("submit", saveAgent);
+document.querySelector("#close-tool-modal-button").addEventListener("click", closeToolModal);
+document.querySelector("#cancel-tool-modal-button").addEventListener("click", closeToolModal);
+elements.toolForm.addEventListener("submit", saveTool);
 elements.searchInput.addEventListener("input", renderAgentList);
 elements.statusFilter.addEventListener("change", renderAgentList);
 elements.modal.addEventListener("click", (event) => { if (event.target === elements.modal) closeModal(); });
-document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !elements.modal.hidden) closeModal(); });
+elements.toolModal.addEventListener("click", (event) => { if (event.target === elements.toolModal) closeToolModal(); });
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!elements.modal.hidden) closeModal();
+  if (!elements.toolModal.hidden) closeToolModal();
+});
 
 void initialiseApplication();
 
 /** Refresh server-derived runtime badges after webhook-driven lifecycle changes. */
 window.setInterval(() => {
-  if (!elements.appShell.hidden) void Promise.all([loadAgents(), loadDashboard()]);
+  if (!elements.appShell.hidden) void Promise.all([loadAgents(), loadDashboard(), loadTools()]);
 }, 15000);

@@ -375,6 +375,8 @@ class TurnTracker:
                 arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
             except json.JSONDecodeError:
                 arguments = {"raw": arguments}
+            if function_call.name == "verify_identity":
+                arguments = {"redacted": True}
             self.client.emit_nowait(
                 "tool.started",
                 occurred_at=event.created_at,
@@ -388,13 +390,20 @@ class TurnTracker:
         elif update_type == "tool_call_ended":
             call_id = update.call_id
             started_at = self.active_tool_started_at.pop(call_id, event.created_at)
-            status = "tool.failed" if update.status == "error" else "tool.succeeded"
+            failed = update.status == "error"
+            try:
+                structured_result = json.loads(update.message) if isinstance(update.message, str) else update.message
+                if isinstance(structured_result, dict) and structured_result.get("status") == "error":
+                    failed = True
+            except (json.JSONDecodeError, TypeError):
+                pass
+            status = "tool.failed" if failed else "tool.succeeded"
             payload: dict[str, Any] = {
                 "tool_call_id": call_id,
                 "result": update.message,
                 "duration_ms": round(max(0.0, event.created_at - started_at) * 1000),
             }
-            if update.status == "error":
+            if failed:
                 payload["error_message"] = update.message
             self.client.emit_nowait(
                 status,

@@ -7,6 +7,7 @@ type AgentUpdate = {
   model?: string
   voice?: string | null
   language?: string
+  tts_model?: string
   archived_at?: string | null
 }
 
@@ -17,6 +18,7 @@ type AgentCreate = {
   model: string
   voice?: string | null
   language?: string
+  tts_model?: string
 }
 
 const editableAgentFields = [
@@ -26,6 +28,7 @@ const editableAgentFields = [
   "model",
   "voice",
   "language",
+  "tts_model",
   "archived_at",
 ] as const
 
@@ -36,9 +39,11 @@ const creatableAgentFields = [
   "model",
   "voice",
   "language",
+  "tts_model",
 ] as const
 
 const supportedAgentLanguages = new Set(["en", "tr"])
+const supportedTtsModels = new Set(["cartesia/sonic-3", "inworld/inworld-tts-2"])
 
 /** Return a consistent JSON error response for validation and database failures. */
 function errorResponse(message: string, status: number): Response {
@@ -73,6 +78,9 @@ function validateAgentFields(input: AgentUpdate): string | null {
   }
   if ("language" in input && (typeof input.language !== "string" || !supportedAgentLanguages.has(input.language))) {
     return "Agent language must be en or tr."
+  }
+  if ("tts_model" in input && (typeof input.tts_model !== "string" || !supportedTtsModels.has(input.tts_model))) {
+    return "Agent TTS model is not supported."
   }
   if (
     "archived_at" in input &&
