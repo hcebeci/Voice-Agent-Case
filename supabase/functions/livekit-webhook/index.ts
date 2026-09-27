@@ -1,5 +1,6 @@
 import { withSupabase } from "npm:@supabase/server"
 import { WebhookReceiver } from "npm:livekit-server-sdk"
+import { getLifecycleUpdate } from "./lifecycle.mjs"
 
 type LiveKitEvent = {
   id?: string
@@ -9,7 +10,6 @@ type LiveKitEvent = {
   participant?: { identity?: string; kind?: string; state?: number }
 }
 
-const activeStatuses = ["connecting", "active"]
 /** Return an error response without exposing secrets or raw verification details. */
 function errorResponse(message: string, status: number): Response {
   return Response.json({ error: message }, { status })
@@ -23,7 +23,7 @@ function eventTimestamp(event: LiveKitEvent): string {
 
 /** Record a readable lifecycle event for the session details page. */
 async function appendSessionEvent(adminClient: any, sessionId: string, event: LiveKitEvent, occurredAt: string) {
-  const { error } = await adminClient.from("session_events").insert({
+  const { error } = await adminClient.from("session_events").upsert({
     session_id: sessionId,
     event_type: `livekit.${event.event ?? "unknown"}`,
     occurred_at: occurredAt,
@@ -31,7 +31,7 @@ async function appendSessionEvent(adminClient: any, sessionId: string, event: Li
     source: "livekit_webhook",
     source_event_id: event.id ?? null,
     payload: event,
-  })
+  }, { onConflict: "source,source_event_id", ignoreDuplicates: true })
   if (error) throw new Error(error.message)
 }
 
@@ -50,31 +50,22 @@ async function updateSessionLifecycle(adminClient: any, event: LiveKitEvent, occ
 
   await appendSessionEvent(adminClient, session.id, event, occurredAt)
 
-  const eventName = event.event ?? ""
-  const lifecycleUpdate: Record<string, string> = { last_livekit_event_at: occurredAt }
-  let allowedCurrentStatuses = activeStatuses
-
-  if (eventName === "room_started" || eventName === "participant_joined") {
-    lifecycleUpdate.status = "active"
-    if (!session.started_at) lifecycleUpdate.started_at = occurredAt
-  } else if (eventName === "room_finished") {
-    lifecycleUpdate.status = "completed"
-    lifecycleUpdate.ended_at = occurredAt
-    allowedCurrentStatuses = activeStatuses
-  } else if (eventName === "participant_connection_aborted" && session.status === "connecting") {
-    lifecycleUpdate.status = "failed"
-    lifecycleUpdate.ended_at = occurredAt
-    allowedCurrentStatuses = ["connecting"]
-  } else {
+  const lifecycleDecision = getLifecycleUpdate({
+    eventType: event.event ?? "",
+    currentStatus: session.status,
+    hasStartedAt: Boolean(session.started_at),
+    occurredAt,
+  })
+  if (!lifecycleDecision) {
     await adminClient.from("sessions").update({ last_livekit_event_at: occurredAt }).eq("id", session.id)
     return
   }
 
   const { error: updateError } = await adminClient
     .from("sessions")
-    .update(lifecycleUpdate)
+    .update(lifecycleDecision.update)
     .eq("id", session.id)
-    .in("status", allowedCurrentStatuses)
+    .in("status", lifecycleDecision.allowedCurrentStatuses)
   if (updateError) throw new Error(updateError.message)
 }
 

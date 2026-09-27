@@ -38,6 +38,8 @@ const creatableAgentFields = [
   "language",
 ] as const
 
+const supportedAgentLanguages = new Set(["en", "tr"])
+
 /** Return a consistent JSON error response for validation and database failures. */
 function errorResponse(message: string, status: number): Response {
   return Response.json({ error: message }, { status })
@@ -68,6 +70,9 @@ function validateAgentFields(input: AgentUpdate): string | null {
   }
   if ("model" in input && (typeof input.model !== "string" || !input.model.trim())) {
     return "Agent model is required."
+  }
+  if ("language" in input && (typeof input.language !== "string" || !supportedAgentLanguages.has(input.language))) {
+    return "Agent language must be en or tr."
   }
   if (
     "archived_at" in input &&

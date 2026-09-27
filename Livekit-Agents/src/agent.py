@@ -4,6 +4,8 @@ import logging
 import os
 import textwrap
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -82,6 +84,62 @@ DEFAULT_INSTRUCTIONS = textwrap.dedent(
                 """
 )
 
+
+def parse_job_metadata(raw_metadata: str | None, room_name: str) -> dict[str, Any]:
+    """Parse dispatch metadata without allowing malformed input to stop a call."""
+
+    if not raw_metadata:
+        return {}
+
+    try:
+        decoded_metadata = json.loads(raw_metadata)
+    except json.JSONDecodeError:
+        logger.warning("Ignoring invalid LiveKit job metadata for room %s", room_name)
+        return {}
+
+    if not isinstance(decoded_metadata, dict):
+        logger.warning("Ignoring non-object LiveKit job metadata for room %s", room_name)
+        return {}
+    return decoded_metadata
+
+
+def session_id_from_room_name(room_name: str) -> str | None:
+    """Recover a browser session ID when dispatch metadata is unavailable."""
+
+    if not room_name.startswith("browser-"):
+        return None
+
+    candidate = room_name.removeprefix("browser-")
+    try:
+        return str(UUID(candidate))
+    except ValueError:
+        return None
+
+
+def resolve_agent_configuration(
+    metadata: dict[str, Any],
+) -> tuple[str, str, str, str]:
+    """Return instructions, model, language, and the instruction source label."""
+
+    raw_instructions = metadata.get("instructions")
+    instructions = raw_instructions.strip() if isinstance(raw_instructions, str) else ""
+    instruction_source = "job_metadata" if instructions else "default"
+    if not instructions:
+        instructions = DEFAULT_INSTRUCTIONS
+
+    raw_model = metadata.get("model")
+    model = raw_model.strip() if isinstance(raw_model, str) and raw_model.strip() else "google/gemma-4-31b-it"
+    language = metadata.get("language")
+    if not isinstance(language, str) or language not in {"en", "tr"}:
+        language = "en"
+
+    language_name = "Turkish" if language == "tr" else "English"
+    instructions = (
+        f"Respond in {language_name} unless the user explicitly asks to switch languages.\n\n"
+        f"{instructions}"
+    )
+    return instructions, model, language, instruction_source
+
     # To add tools, use the @function_tool decorator.
     # Here's an example that adds a simple weather tool.
     # You also have to add `from livekit.agents import function_tool, RunContext` to the top of this file
@@ -105,16 +163,24 @@ server = AgentServer()
 
 @server.rtc_session()
 async def my_agent(ctx: JobContext):
-    metadata = {}
-    if ctx.job.metadata:
-        try:
-            metadata = json.loads(ctx.job.metadata)
-        except json.JSONDecodeError:
-            logger.warning("Ignoring invalid LiveKit job metadata for room %s", ctx.room.name)
-
-    instructions = metadata.get("instructions") or DEFAULT_INSTRUCTIONS
-    model = metadata.get("model") or "google/gemma-4-31b-it"
+    metadata = parse_job_metadata(ctx.job.metadata, ctx.room.name)
+    instructions, model, language, instruction_source = resolve_agent_configuration(metadata)
     session_id = metadata.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        session_id = session_id_from_room_name(ctx.room.name)
+
+    logger.info(
+        "Loaded browser session configuration",
+        extra={
+            "room": ctx.room.name,
+            "session_id": session_id or "unknown",
+            "agent_name": metadata.get("agent_name", "unknown"),
+            "metadata_present": bool(ctx.job.metadata),
+            "instruction_source": instruction_source,
+            "instruction_length": len(instructions),
+            "language": language,
+        },
+    )
 
     # Logging setup
     # Add any other context you want in all log entries here
@@ -147,13 +213,13 @@ async def my_agent(ctx: JobContext):
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
         # See all available models at https://docs.livekit.io/agents/models/stt/
-        stt=inference.STT(model="assemblyai/universal-3-5-pro", language="en"),
+        stt=inference.STT(model="assemblyai/universal-3-5-pro", language=language),
         # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
         # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
         tts=inference.TTS(
             model="cartesia/sonic-3",
             voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-            language="en",
+            language=language,
         ),
         turn_handling=TurnHandlingOptions(
             # The LiveKit turn detector determines when the user is done speaking and the agent should respond.
@@ -199,15 +265,15 @@ async def my_agent(ctx: JobContext):
 
         @session.on("session_usage_updated")
         def on_session_usage_updated(event):
-            observability_client.emit_nowait(
-                "session.usage",
+            observability_client.emit_session_usage_if_changed(
+                event.usage,
                 occurred_at=event.created_at,
                 turn_number=turn_tracker.current_turn_number,
-                payload={"usage": event.usage},
             )
 
         @session.on("close")
-        def on_session_close(_event):
+        def on_session_close(event):
+            turn_tracker.on_session_close(getattr(event, "created_at", None))
             start_background_task(observability_client.close())
 
         for component_name, component in (

@@ -35,6 +35,29 @@ async function reconcileStaleConnectingSessions(supabaseClient: any) {
   if (error) throw new Error(error.message)
 }
 
+/** Close active sessions whose verified LiveKit lifecycle stopped reporting. */
+async function reconcileStaleActiveSessions(supabaseClient: any) {
+  const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+  const endedAt = new Date().toISOString()
+  const { error: reportedSessionError } = await supabaseClient
+    .from("sessions")
+    .update({ status: "failed", ended_at: endedAt })
+    .eq("status", "active")
+    .not("last_livekit_event_at", "is", null)
+    .lt("last_livekit_event_at", staleBefore)
+  if (reportedSessionError) throw new Error(reportedSessionError.message)
+
+  // Active rows created by an older deployment may not have a lifecycle
+  // timestamp. Reconcile those only after the same conservative timeout.
+  const { error: legacySessionError } = await supabaseClient
+    .from("sessions")
+    .update({ status: "failed", ended_at: endedAt })
+    .eq("status", "active")
+    .is("last_livekit_event_at", null)
+    .lt("started_at", staleBefore)
+  if (legacySessionError) throw new Error(legacySessionError.message)
+}
+
 /** Return the daily dashboard summary and the latest session timeline. */
 export default {
   fetch: withSupabase({ auth: "user" }, async (request, context) => {
@@ -51,6 +74,7 @@ export default {
 
     try {
       await reconcileStaleConnectingSessions(context.supabase)
+      await reconcileStaleActiveSessions(context.supabase)
     } catch (reconciliationError) {
       return Response.json({ error: (reconciliationError as Error).message }, { status: 500 })
     }

@@ -12,7 +12,15 @@ if (applicationConfig.supabaseUrl && applicationConfig.supabasePublishableKey &&
   }
 }
 
-const pageState = { agents: [], editingAgentId: null, dashboard: null, liveSession: null };
+/** Explain how to start the UI when the generated browser configuration is absent. */
+function missingConfigurationMessage() {
+  if (window.location.protocol === "file:") {
+    return "This page was opened as a file. Run `python3 start.py` and open http://127.0.0.1:8000 so the browser can load its Supabase configuration.";
+  }
+  return "Supabase configuration is missing. Check supabase/.env and restart start.py.";
+}
+
+const pageState = { agents: [], editingAgentId: null, dashboard: null, liveSession: null, selectedSessionId: null, selectedAgentMetricsId: null, sessionDetailsPollTimer: null, sessionView: "transcript", traceZoom: 1 };
 const elements = {
   authScreen: document.querySelector("#auth-screen"),
   appShell: document.querySelector("#app-shell"),
@@ -25,18 +33,46 @@ const elements = {
   dashboardPage: document.querySelector("#dashboard-page"),
   agentsPage: document.querySelector("#agents-page"),
   sessionsPage: document.querySelector("#sessions-page"),
+  sessionDetailsPage: document.querySelector("#session-details-page"),
+  agentMetricsPage: document.querySelector("#agent-metrics-page"),
   dashboardCreateButton: document.querySelector("#dashboard-create-button"),
   sessionsTodayValue: document.querySelector("#sessions-today-value"),
   availableAgentsValue: document.querySelector("#available-agents-value"),
   activeAgentsValue: document.querySelector("#active-agents-value"),
   activeSessionsValue: document.querySelector("#active-sessions-value"),
   sleepingAgentsValue: document.querySelector("#sleeping-agents-value"),
+  dashboardAgentList: document.querySelector("#dashboard-agent-list"),
   dashboardDate: document.querySelector("#dashboard-date"),
   sessionTimeline: document.querySelector("#session-timeline"),
   latestSessionList: document.querySelector("#latest-session-list"),
   allSessionList: document.querySelector("#all-session-list"),
   seeAllSessionsButton: document.querySelector("#see-all-sessions-button"),
   backToDashboardButton: document.querySelector("#back-to-dashboard-button"),
+  backToSessionsButton: document.querySelector("#back-to-sessions-button"),
+  sessionDetailsTitle: document.querySelector("#session-details-title"),
+  sessionDetailsDescription: document.querySelector("#session-details-description"),
+  sessionDetailsError: document.querySelector("#session-details-error"),
+  sessionTurnCount: document.querySelector("#session-turn-count"),
+  sessionAverageLatency: document.querySelector("#session-average-latency"),
+  sessionP50Latency: document.querySelector("#session-p50-latency"),
+  sessionP95Latency: document.querySelector("#session-p95-latency"),
+  sessionInputTokens: document.querySelector("#session-input-tokens"),
+  sessionOutputTokens: document.querySelector("#session-output-tokens"),
+  sessionTurnList: document.querySelector("#session-turn-list"),
+  sessionTraceList: document.querySelector("#session-trace-list"),
+  sessionTraceViewport: document.querySelector("#session-trace-viewport"),
+  sessionTraceDetail: document.querySelector("#session-trace-detail"),
+  sessionToolList: document.querySelector("#session-tool-list"),
+  sessionEventList: document.querySelector("#session-event-list"),
+  agentMetricsTitle: document.querySelector("#agent-metrics-title"),
+  agentMetricsDescription: document.querySelector("#agent-metrics-description"),
+  agentMetricsError: document.querySelector("#agent-metrics-error"),
+  agentTotalSessions: document.querySelector("#agent-total-sessions"),
+  agentConcurrentSessions: document.querySelector("#agent-concurrent-sessions"),
+  agentAverageInputTokens: document.querySelector("#agent-average-input-tokens"),
+  agentAverageOutputTokens: document.querySelector("#agent-average-output-tokens"),
+  agentLatencyList: document.querySelector("#agent-latency-list"),
+  agentRecentSessionList: document.querySelector("#agent-recent-session-list"),
   list: document.querySelector("#agent-list"),
   emptyState: document.querySelector("#empty-state"),
   emptyTitle: document.querySelector("#empty-title"),
@@ -54,6 +90,7 @@ const elements = {
   description: document.querySelector("#agent-description"),
   instructions: document.querySelector("#agent-instructions"),
   model: document.querySelector("#agent-model"),
+  language: document.querySelector("#agent-language"),
   callModal: document.querySelector("#call-modal"),
   callStatus: document.querySelector("#call-status"),
   callAgentName: document.querySelector("#call-agent-name"),
@@ -71,13 +108,15 @@ function showApplication() {
 
 /** Return the user to the sign-in screen after logout or an expired session. */
 function showAuthentication() {
+  stopSessionDetailsPolling();
   elements.appShell.hidden = true;
   elements.authScreen.hidden = false;
 }
 
 /** Switch between the dashboard, agent list, and session history views. */
 function showPage(pageId) {
-  [elements.dashboardPage, elements.agentsPage, elements.sessionsPage].forEach((page) => {
+  if (pageId !== "session-details-page") stopSessionDetailsPolling();
+  [elements.dashboardPage, elements.agentsPage, elements.sessionsPage, elements.sessionDetailsPage, elements.agentMetricsPage].forEach((page) => {
     page.hidden = page.id !== pageId;
   });
   document.querySelectorAll(".navigation-link[data-page]").forEach((link) => {
@@ -86,6 +125,21 @@ function showPage(pageId) {
     if (isCurrentPage) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
+  const route = pageId === "session-details-page" && pageState.selectedSessionId
+    ? `session/${pageState.selectedSessionId}`
+    : pageId === "agent-metrics-page" && pageState.selectedAgentMetricsId
+      ? `agent-metrics/${pageState.selectedAgentMetricsId}`
+      : pageId.replace("-page", "");
+  try {
+    sessionStorage.setItem("agent-studio-navigation", JSON.stringify({
+      pageId,
+      sessionId: pageState.selectedSessionId,
+      agentId: pageState.selectedAgentMetricsId,
+    }));
+  } catch {
+    // Continue normally when the browser blocks session storage.
+  }
+  if (window.location.hash !== `#${route}`) window.history.replaceState(null, "", `#${route}`);
 }
 
 /** Display one authentication or API error in the relevant form. */
@@ -105,7 +159,7 @@ async function signIn(event) {
   event.preventDefault();
   clearError(elements.authError);
   if (!supabaseClient) {
-    showError(elements.authError, "Supabase configuration is missing. Check supabase/.env.");
+    showError(elements.authError, missingConfigurationMessage());
     return;
   }
 
@@ -186,12 +240,51 @@ async function callWorkspaceApi(functionName, path = "", options = {}) {
 }
 
 /** Load all sessions for the full-session history page. */
-async function loadAllSessions() {
+async function loadAllSessions(agentId = null) {
   try {
-    const response = await callWorkspaceApi("sessions", "?limit=100");
+    const query = new URLSearchParams({ limit: "100" });
+    if (agentId) query.set("agent_id", agentId);
+    const response = await callWorkspaceApi("sessions", `?${query.toString()}`);
     renderSessionList(elements.allSessionList, response.sessions ?? [], "No sessions have been recorded yet.");
   } catch (error) {
     showError(elements.pageError, error.message);
+  }
+}
+
+/** Load one session's transcript, traces, tools, events, and calculated metrics. */
+/** Stop background updates when the session details page is no longer visible. */
+function stopSessionDetailsPolling() {
+  if (pageState.sessionDetailsPollTimer) {
+    window.clearInterval(pageState.sessionDetailsPollTimer);
+    pageState.sessionDetailsPollTimer = null;
+  }
+}
+
+/** Refresh an in-progress session until LiveKit reports a terminal status. */
+function startSessionDetailsPolling(sessionId) {
+  if (pageState.sessionDetailsPollTimer || pageState.selectedSessionId !== sessionId) return;
+  pageState.sessionDetailsPollTimer = window.setInterval(() => {
+    if (document.hidden || pageState.selectedSessionId !== sessionId || elements.sessionDetailsPage.hidden) return;
+    void loadSessionDetails(sessionId, { background: true });
+  }, 5000);
+}
+
+/** Load one session and optionally refresh it without changing the current view. */
+async function loadSessionDetails(sessionId, { background = false } = {}) {
+  pageState.selectedSessionId = sessionId;
+  clearError(elements.sessionDetailsError);
+  if (!background) {
+    pageState.traceZoom = 1;
+    pageState.sessionView = "transcript";
+    showPage("session-details-page");
+  }
+  try {
+    const response = await callWorkspaceApi("sessions", `?id=${encodeURIComponent(sessionId)}`);
+    renderSessionDetails(response);
+    if (["connecting", "active"].includes(response.session?.status)) startSessionDetailsPolling(sessionId);
+    else stopSessionDetailsPolling();
+  } catch (error) {
+    if (!background) showError(elements.sessionDetailsError, error.message);
   }
 }
 
@@ -206,6 +299,115 @@ function renderDashboard(dashboard) {
   elements.dashboardDate.textContent = formatDate(dashboard.date);
   renderSessionList(elements.sessionTimeline, dashboard.today_sessions ?? [], "No sessions today.");
   renderSessionList(elements.latestSessionList, dashboard.latest_sessions ?? [], "No sessions have been recorded yet.");
+  renderDashboardAgentList(dashboard.agents ?? []);
+}
+
+/** Render dashboard agents as links into their performance summaries. */
+function renderDashboardAgentList(agents) {
+  if (!agents.length) {
+    elements.dashboardAgentList.innerHTML = `<p class="session-empty">No agents have been created yet.</p>`;
+    return;
+  }
+  elements.dashboardAgentList.innerHTML = agents.map(createDashboardAgentRowMarkup).join("");
+  elements.dashboardAgentList.querySelectorAll("[data-agent-metrics-id]").forEach((row) => {
+    row.addEventListener("click", () => void loadAgentMetrics(row.dataset.agentMetricsId));
+  });
+}
+
+/** Build a dashboard row that shows runtime status and active session count. */
+function createDashboardAgentRowMarkup(agent) {
+  const activeSessions = agent.active_session_count ?? 0;
+  return `<button class="agent-dashboard-row" data-agent-metrics-id="${escapeHtml(agent.id)}" type="button"><span class="agent-dashboard-avatar" aria-hidden="true">${escapeHtml(agent.name.slice(0, 1).toUpperCase())}</span><span class="session-row-content"><span class="session-row-title">${escapeHtml(agent.name)}</span><span class="session-row-meta">${escapeHtml(agent.runtime_status)} · ${activeSessions} active session${activeSessions === 1 ? "" : "s"}</span></span><span class="session-row-status">View metrics</span></button>`;
+}
+
+/** Load one agent's aggregate metrics and recent sessions. */
+async function loadAgentMetrics(agentId) {
+  pageState.selectedAgentMetricsId = agentId;
+  clearError(elements.agentMetricsError);
+  showPage("agent-metrics-page");
+  try {
+    const response = await callWorkspaceApi("agent-metrics", `?id=${encodeURIComponent(agentId)}`);
+    renderAgentMetrics(response);
+  } catch (error) {
+    showError(elements.agentMetricsError, error.message);
+  }
+}
+
+/** Restore the last visible page after a browser refresh. */
+async function restoreLastPage() {
+  let storedState;
+  try {
+    storedState = JSON.parse(sessionStorage.getItem("agent-studio-navigation") || "null");
+  } catch {
+    storedState = null;
+  }
+  const hashRoute = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+  if (hashRoute.startsWith("session/")) {
+    await loadSessionDetails(hashRoute.slice("session/".length));
+    return;
+  }
+  if (hashRoute.startsWith("agent-metrics/")) {
+    await loadAgentMetrics(hashRoute.slice("agent-metrics/".length));
+    return;
+  }
+  const hashPage = { dashboard: "dashboard-page", agents: "agents-page", sessions: "sessions-page" }[hashRoute];
+  if (hashPage) storedState = { pageId: hashPage };
+  if (!storedState?.pageId) return;
+  if (storedState.pageId === "session-details-page" && storedState.sessionId) {
+    await loadSessionDetails(storedState.sessionId);
+    return;
+  }
+  if (storedState.pageId === "agent-metrics-page" && storedState.agentId) {
+    await loadAgentMetrics(storedState.agentId);
+    return;
+  }
+  if (["dashboard-page", "agents-page"].includes(storedState.pageId)) {
+    showPage(storedState.pageId);
+    return;
+  }
+  if (storedState.pageId === "sessions-page") {
+    showPage("sessions-page");
+    await loadAllSessions();
+  }
+}
+
+/** Render aggregate usage, latency stages, and recent sessions for one agent. */
+function renderAgentMetrics(details) {
+  const agent = details.agent ?? {};
+  const metrics = details.metrics ?? {};
+  elements.agentMetricsTitle.textContent = `${agent.name ?? "Agent"} metrics`;
+  elements.agentMetricsDescription.textContent = `${agent.language === "tr" ? "Turkish" : "English"} · ${agent.archived_at ? "offline" : "available for sessions"}`;
+  elements.agentTotalSessions.textContent = metrics.total_session_count ?? 0;
+  elements.agentConcurrentSessions.textContent = metrics.concurrent_session_count ?? 0;
+  elements.agentAverageInputTokens.textContent = formatWholeNumber(metrics.average_input_tokens_per_session);
+  elements.agentAverageOutputTokens.textContent = formatWholeNumber(metrics.average_output_tokens_per_session);
+
+  const latencyByStage = metrics.latency_by_stage ?? {};
+  const stageOrder = ["end_to_end", "stt", "llm", "tool", "tts", "agent_speaking"];
+  const availableStages = stageOrder.filter((stage) => latencyByStage[stage]);
+  elements.agentLatencyList.innerHTML = availableStages.length
+    ? availableStages.map((stage) => {
+      const summary = latencyByStage[stage];
+      return `<div class="latency-stage-row"><strong>${escapeHtml(formatStageName(stage))}</strong><span>${formatLatency(summary.average_ms)}</span><span>${formatLatency(summary.p50_ms)}</span><span>${formatLatency(summary.p95_ms)}</span></div>`;
+    }).join("")
+    : `<p class="session-empty">No completed latency stages have been recorded yet.</p>`;
+  if (availableStages.length) {
+    elements.agentLatencyList.insertAdjacentHTML("afterbegin", `<div class="latency-stage-heading"><span>Stage</span><span>Average</span><span>p50</span><span>p95</span></div>`);
+  }
+  renderSessionList(elements.agentRecentSessionList, details.recent_sessions ?? [], "No sessions have been recorded for this agent yet.");
+}
+
+/** Format aggregate token values without showing unnecessary decimal places. */
+function formatWholeNumber(value) {
+  if (value == null || value === "") return "—";
+  const numericValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? Math.round(numericValue).toLocaleString() : "—";
+}
+
+/** Convert trace identifiers into readable latency stage labels. */
+function formatStageName(stage) {
+  if (stage === "agent_speaking") return "Agent speaking duration";
+  return stage.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 /** Render session rows consistently across the dashboard and history page. */
@@ -215,6 +417,9 @@ function renderSessionList(target, sessions, emptyMessage) {
     return;
   }
   target.innerHTML = sessions.map(createSessionRowMarkup).join("");
+  target.querySelectorAll("[data-session-id]").forEach((row) => {
+    row.addEventListener("click", () => void loadSessionDetails(row.dataset.sessionId));
+  });
 }
 
 /** Build a readable session row with its associated agent name and status. */
@@ -224,7 +429,282 @@ function createSessionRowMarkup(session) {
   const sessionDate = session.created_at ? new Date(session.created_at) : null;
   const sessionTime = sessionDate ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(sessionDate) : "Not started";
   const statusLabel = session.status.replaceAll("_", " ");
-  return `<div class="session-row"><span class="session-indicator" aria-hidden="true"></span><div class="session-row-content"><div class="session-row-title">${escapeHtml(agentName)}</div><div class="session-row-meta">${escapeHtml(session.source)} · ${escapeHtml(sessionTime)}</div></div><span class="session-row-status">${escapeHtml(statusLabel)}</span></div>`;
+  return `<button class="session-row" data-session-id="${escapeHtml(session.id)}" type="button"><span class="session-indicator" aria-hidden="true"></span><span class="session-row-content"><span class="session-row-title">${escapeHtml(agentName)}</span><span class="session-row-meta">${escapeHtml(session.source)} · ${escapeHtml(sessionTime)}</span></span><span class="session-row-status">${escapeHtml(statusLabel)}</span></button>`;
+}
+
+/** Render the session detail sections from the normalized observability records. */
+function renderSessionDetails(details) {
+  const session = details.session ?? {};
+  const sessionAgent = Array.isArray(session.agents) ? session.agents[0] : session.agents;
+  const metrics = details.metrics ?? {};
+  const turns = details.turns ?? [];
+  const traces = details.traces ?? [];
+  const events = details.events ?? [];
+  const sessionStart = getSessionStartTimestamp(session, turns, traces, events);
+  elements.sessionDetailsTitle.textContent = sessionAgent?.name ? `${sessionAgent.name} session` : "Session details";
+  elements.sessionDetailsDescription.textContent = `${formatDateTime(session.created_at)} · ${session.status?.replaceAll("_", " ") ?? "unknown"}`;
+  elements.sessionTurnCount.textContent = metrics.turn_count ?? 0;
+  elements.sessionAverageLatency.textContent = formatLatency(metrics.average_latency_ms);
+  elements.sessionP50Latency.textContent = formatLatency(metrics.p50_latency_ms);
+  elements.sessionP95Latency.textContent = formatLatency(metrics.p95_latency_ms);
+  elements.sessionInputTokens.textContent = formatWholeNumber(metrics.total_input_tokens);
+  elements.sessionOutputTokens.textContent = formatWholeNumber(metrics.total_output_tokens);
+
+  elements.sessionTurnList.innerHTML = turns.length
+    ? turns.map((turn) => {
+      const userTimestamp = turn.transcript_completed_at || turn.user_speech_stopped_at || turn.created_at;
+      const agentTimestamp = turn.agent_first_audio_started_at || turn.response_ready_at || turn.created_at;
+      return `<article class="turn-card"><div class="turn-card-heading"><strong>Turn ${turn.turn_number}</strong><span class="turn-timestamp">${formatTimestampWithElapsed(userTimestamp, sessionStart)}</span></div><div class="turn-message user-message"><span class="turn-speaker">User</span><div><p>${escapeHtml(turn.user_transcript || "Transcript pending")}</p><span class="message-timestamp">${formatTimestampWithElapsed(userTimestamp, sessionStart)}</span></div></div><div class="turn-message agent-message"><span class="turn-speaker">Agent</span><div><p>${escapeHtml(turn.agent_transcript || "Response pending")}</p><span class="message-timestamp">${formatTimestampWithElapsed(agentTimestamp, sessionStart)}</span></div></div><div class="turn-card-meta">Latency ${formatLatency(turn.total_latency_ms)} · ${escapeHtml(turn.status ?? "in progress")}</div></article>`;
+    }).join("")
+    : `<p class="session-empty">No conversation turns have been recorded yet.</p>`;
+
+  const tools = details.tool_calls ?? [];
+  renderTraceTimeline(elements.sessionTraceList, traces, sessionStart, session);
+  elements.sessionToolList.hidden = true;
+
+  elements.sessionToolList.innerHTML = tools.length
+    ? `<div class="trace-tools-heading">Tool executions</div>${tools.map((tool) => `<div class="session-row"><span class="session-indicator" aria-hidden="true"></span><span class="session-row-content"><span class="session-row-title">${escapeHtml(tool.tool_name)}</span><span class="session-row-meta">${escapeHtml(tool.status)} · ${formatTimestampWithElapsed(tool.started_at, sessionStart)}</span></span><span class="session-row-status">${formatLatency(tool.duration_ms)}</span></div>`).join("")}`
+    : `<p class="session-empty">No tools ran in this session.</p>`;
+
+  elements.sessionEventList.innerHTML = events.length
+    ? events.map((event) => {
+      const payload = event.payload && Object.keys(event.payload).length ? `<details class="event-payload"><summary>View payload</summary><pre>${escapeHtml(JSON.stringify(event.payload, null, 2))}</pre></details>` : "";
+      return `<div class="event-row"><div class="event-row-heading"><strong>${escapeHtml(event.event_type)}</strong><span>${formatTimestampWithElapsed(event.occurred_at, sessionStart)}</span></div><span>${escapeHtml(event.source)} · received ${formatDateTimeWithSeconds(event.received_at)}</span>${payload}</div>`;
+    }).join("")
+    : `<p class="session-empty">No events have been recorded yet.</p>`;
+
+  setSessionView(pageState.sessionView ?? "transcript");
+}
+
+/** Adjust the processing timeline scale while keeping every span on one time axis. */
+function setTraceZoom(action) {
+  const timeline = elements.sessionTraceList;
+  const traceData = timeline._traceData;
+  if (!traceData) return;
+  if (action === "reset") pageState.traceZoom = 1;
+  if (action === "in") pageState.traceZoom = Math.min(4, (pageState.traceZoom ?? 1) * 1.5);
+  if (action === "out") pageState.traceZoom = Math.max(1, (pageState.traceZoom ?? 1) / 1.5);
+  renderTraceTimeline(timeline, traceData.traces, traceData.sessionStart, traceData.session);
+  const zoomLabel = document.querySelector("#trace-zoom-label");
+  if (zoomLabel) zoomLabel.textContent = `${Math.round(pageState.traceZoom * 100)}%`;
+}
+
+/** Select the earliest trustworthy timestamp as the session timeline origin. */
+function getSessionStartTimestamp(session, turns, traces, events) {
+  const candidates = [session.started_at, ...turns.map((turn) => turn.created_at), ...traces.map((trace) => trace.started_at), ...events.map((event) => event.occurred_at)].filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
+  return candidates.length ? Math.min(...candidates) : Date.now();
+}
+
+/** Render trace spans as bars positioned on one shared time axis. */
+function renderTraceTimeline(target, traces, sessionStart, session) {
+  const validTraces = traces.filter((trace) => trace.started_at);
+  if (!validTraces.length) {
+    target.innerHTML = `<p class="session-empty">No processing traces have been recorded yet.</p>`;
+    target._traceData = null;
+    target.closest(".trace-workspace")?.classList.remove("has-trace-detail");
+    elements.sessionTraceDetail.hidden = true;
+    return;
+  }
+  const sessionEnd = Math.max(
+    new Date(session.ended_at || 0).getTime() || 0,
+    ...validTraces.map((trace) => new Date(trace.ended_at || trace.started_at).getTime()),
+  );
+  const totalDuration = Math.max(sessionEnd - sessionStart, 1);
+  const ticks = Array.from({ length: 6 }, (_, index) => {
+    const offset = totalDuration * index / 5;
+    return `<span>${formatElapsedMilliseconds(offset)}</span>`;
+  }).join("");
+  // The upper axis is the user's speech pattern; the lower axis contains the
+  // complete agent pipeline, including STT, LLM, TTS, and agent speaking.
+  const userTraceTypes = new Set(["trace.user_speaking"]);
+  const userTraces = validTraces.filter((trace) => userTraceTypes.has(trace.event_type));
+  const agentTraces = validTraces.filter((trace) => !userTraceTypes.has(trace.event_type));
+  const traceIndex = new Map(validTraces.map((trace, index) => [trace, index]));
+  const userLane = renderTraceSwimlane("User turn", userTraces, traceIndex, sessionStart, totalDuration);
+  const agentLane = renderAgentTraceGroup(agentTraces, traceIndex, sessionStart, totalDuration);
+  target.innerHTML = `<div class="trace-axis">${ticks}</div><section class="trace-track-group trace-user-group"><div class="trace-track-group-heading">User traces</div>${userLane}</section><section class="trace-track-group trace-agent-group"><div class="trace-track-group-heading">Agent traces</div>${agentLane}</section><div class="trace-cursor" data-trace-cursor hidden><span></span></div>`;
+  target._traceRecords = validTraces;
+  target._traceData = { traces, sessionStart, session };
+  const zoom = pageState.traceZoom ?? 1;
+  target.style.width = zoom > 1 ? `${zoom * 100}%` : "100%";
+  target.style.minWidth = `${680 * zoom}px`;
+  const zoomLabel = document.querySelector("#trace-zoom-label");
+  if (zoomLabel) zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+  target.closest(".trace-workspace")?.classList.remove("has-trace-detail");
+  elements.sessionTraceDetail.hidden = true;
+  bindTraceTimelineInteractions(target, totalDuration);
+  target.onclick = (event) => {
+    const bar = event.target.closest("[data-trace-index]");
+    if (!bar || !target.contains(bar)) return;
+    const trace = target._traceRecords?.[Number(bar.dataset.traceIndex)];
+    if (trace) renderTraceDetail(trace, sessionStart);
+  };
+}
+
+/** Render one speaker lane so user and agent speech are visually separated. */
+function renderTraceSwimlane(label, traces, traceIndex, sessionStart, totalDuration) {
+  const bars = traces.map((trace) => renderTraceBar(trace, traceIndex.get(trace), sessionStart, totalDuration)).join("");
+  const emptyLabel = traces.length ? "" : `<span class="trace-lane-empty">No recorded spans</span>`;
+  return `<div class="trace-swimlane"><div class="trace-swimlane-label">${escapeHtml(label)}</div><div class="trace-swimlane-track">${bars}${emptyLabel}</div></div>`;
+}
+
+/** Render the agent pipeline on one shared time axis without stacking spans over each other. */
+function renderAgentTraceGroup(traces, traceIndex, sessionStart, totalDuration) {
+  if (!traces.length) return renderTraceSwimlane("Agent turn", [], traceIndex, sessionStart, totalDuration);
+  const groups = new Map();
+  for (const trace of traces) {
+    const component = groups.get(trace.event_type) ?? [];
+    component.push(trace);
+    groups.set(trace.event_type, component);
+  }
+  const firstStart = Math.min(...traces.map((trace) => new Date(trace.started_at).getTime()));
+  const lastEnd = Math.max(...traces.map((trace) => new Date(trace.ended_at || trace.started_at).getTime()));
+  const parent = renderTraceParentLane("Agent turn", firstStart, lastEnd, sessionStart, totalDuration);
+  const componentRows = [...groups.values()]
+    .map((component) => renderTraceLane(component, traceIndex, sessionStart, totalDuration))
+    .join("");
+  return `${parent}${componentRows}`;
+}
+
+/** Render a parent turn lane spanning all agent processing stages. */
+function renderTraceParentLane(label, startedAt, endedAt, sessionStart, totalDuration) {
+  const startOffset = Math.max(0, startedAt - sessionStart);
+  const endOffset = Math.max(startOffset + 1, endedAt - sessionStart);
+  const left = Math.min(99, startOffset / totalDuration * 100);
+  const width = Math.max(1, Math.min(100 - left, (endOffset - startOffset) / totalDuration * 100));
+  return `<div class="trace-parent-lane"><div class="trace-parent-label">${escapeHtml(label)}</div><div class="trace-parent-track"><span style="left:${left}%;width:${width}%"></span></div></div>`;
+}
+
+/** Render one processing lane while preserving its full event name for hover and details. */
+function renderTraceLane(traces, traceIndex, sessionStart, totalDuration) {
+  const traceName = traces[0].event_type.replace("trace.", "").replaceAll("_", " ");
+  const bars = traces.map((trace) => renderTraceBar(trace, traceIndex.get(trace), sessionStart, totalDuration)).join("");
+  const totalDurationMs = traces.reduce((total, trace) => total + (getTraceDurationMs(trace) ?? 0), 0);
+  const spanCount = `${traces.length} span${traces.length === 1 ? "" : "s"}`;
+  return `<div class="trace-lane"><div class="trace-lane-label" title="${escapeHtml(traceName)}">${escapeHtml(traceName)}</div><div class="trace-lane-track">${bars}</div><span class="trace-lane-duration">${spanCount} · ${formatLatency(totalDurationMs)}</span></div>`;
+}
+
+/** Build a clickable trace span with a complete hover label and precise positioning. */
+function renderTraceBar(trace, index, sessionStart, totalDuration) {
+  const startOffset = Math.max(0, new Date(trace.started_at).getTime() - sessionStart);
+  const endOffset = Math.max(startOffset + 1, new Date(trace.ended_at || trace.started_at).getTime() - sessionStart);
+  const left = Math.min(99, startOffset / totalDuration * 100);
+  const width = Math.max(1, Math.min(100 - left, (endOffset - startOffset) / totalDuration * 100));
+  const traceName = trace.event_type.replace("trace.", "").replaceAll("_", " ");
+  const hoverLabel = `${trace.event_type} · ${formatTimestampWithElapsed(trace.started_at, sessionStart)} · ${formatLatency(getTraceDurationMs(trace))}`;
+  return `<button class="trace-bar trace-${escapeHtml(trace.event_type.replace("trace.", ""))}" data-trace-index="${index}" type="button" style="left:${left}%;width:${width}%" title="${escapeHtml(hoverLabel)}" aria-label="${escapeHtml(hoverLabel)}">${escapeHtml(traceName)}</button>`;
+}
+
+/** Attach cursor, hover, and click behavior to the shared trace timeline. */
+function bindTraceTimelineInteractions(target, totalDuration) {
+  const viewport = elements.sessionTraceViewport;
+  const cursor = target.querySelector("[data-trace-cursor]");
+  let panStartX = null;
+  let panStartScrollLeft = 0;
+  viewport.onmousemove = (event) => {
+    const track = event.target.closest(".trace-lane-track, .trace-swimlane-track") || target.querySelector(".trace-lane-track, .trace-swimlane-track");
+    if (!track || !cursor) return;
+    const trackBounds = track.getBoundingClientRect();
+    const targetBounds = target.getBoundingClientRect();
+    const x = Math.max(0, Math.min(trackBounds.width, event.clientX - trackBounds.left));
+    const elapsed = Math.max(0, Math.min(totalDuration, x / Math.max(trackBounds.width, 1) * totalDuration));
+    cursor.style.left = `${event.clientX - targetBounds.left + viewport.scrollLeft}px`;
+    cursor.querySelector("span").textContent = formatElapsedMilliseconds(elapsed);
+    cursor.hidden = false;
+  };
+  viewport.onmouseleave = () => {
+    if (cursor) cursor.hidden = true;
+  };
+  viewport.onwheel = (event) => {
+    event.preventDefault();
+    setTraceZoom(event.deltaY < 0 ? "in" : "out");
+  };
+  viewport.onpointerdown = (event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest(".trace-bar")) return;
+    panStartX = event.clientX;
+    panStartScrollLeft = viewport.scrollLeft;
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add("is-panning");
+  };
+  viewport.onpointermove = (event) => {
+    if (panStartX == null) return;
+    const distance = event.clientX - panStartX;
+    viewport.scrollLeft = panStartScrollLeft - distance;
+  };
+  const finishPan = (event) => {
+    if (panStartX == null) return;
+    panStartX = null;
+    viewport.classList.remove("is-panning");
+    if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+  };
+  viewport.onpointerup = finishPan;
+  viewport.onpointercancel = finishPan;
+}
+
+/** Show the complete span payload after a user clicks a trace bar. */
+function renderTraceDetail(trace, sessionStart) {
+  const startedAt = trace.started_at;
+  const endedAt = trace.ended_at || trace.started_at;
+  const metadata = trace.metadata && Object.keys(trace.metadata).length ? `<pre>${escapeHtml(JSON.stringify(trace.metadata, null, 2))}</pre>` : `<p class="trace-detail-empty">No attributes recorded.</p>`;
+  const rawPayload = trace.raw_payload && Object.keys(trace.raw_payload).length ? `<pre>${escapeHtml(JSON.stringify(trace.raw_payload, null, 2))}</pre>` : `<p class="trace-detail-empty">No raw payload recorded.</p>`;
+  elements.sessionTraceDetail.innerHTML = `<div class="trace-detail-header"><div><p class="eyebrow">TRACE DETAILS</p><h3>${escapeHtml(trace.event_type)}</h3></div><button class="icon-button" data-close-trace-detail type="button" aria-label="Close trace details">×</button></div><div class="trace-detail-grid"><div><span>Start time</span><strong>${escapeHtml(formatDateTimeWithSeconds(startedAt))}</strong></div><div><span>End time</span><strong>${escapeHtml(formatDateTimeWithSeconds(endedAt))}</strong></div><div><span>Elapsed start</span><strong>${escapeHtml(formatTimestampWithElapsed(startedAt, sessionStart))}</strong></div><div><span>Duration</span><strong>${escapeHtml(formatLatency(getTraceDurationMs(trace)))}</strong></div><div><span>Status</span><strong>${escapeHtml(trace.status || "unknown")}</strong></div><div><span>Turn</span><strong>${escapeHtml(trace.turn_id || "Session")}</strong></div></div><div class="trace-detail-attributes"><span>Attributes</span>${metadata}</div><div class="trace-detail-attributes"><span>Raw payload</span>${rawPayload}</div>`;
+  elements.sessionTraceList.closest(".trace-workspace")?.classList.add("has-trace-detail");
+  elements.sessionTraceDetail.hidden = false;
+  elements.sessionTraceDetail.querySelector("[data-close-trace-detail]").addEventListener("click", () => {
+    elements.sessionTraceDetail.hidden = true;
+    elements.sessionTraceList.closest(".trace-workspace")?.classList.remove("has-trace-detail");
+  });
+  elements.sessionTraceDetail.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+/** Prefer the persisted duration, falling back to timestamps for older records. */
+function getTraceDurationMs(trace) {
+  if (typeof trace.duration_ms === "number") return trace.duration_ms;
+  if (!trace.started_at || !trace.ended_at) return null;
+  return Math.max(0, new Date(trace.ended_at).getTime() - new Date(trace.started_at).getTime());
+}
+
+/** Switch between transcript, logs, and trace views without refetching data. */
+function setSessionView(viewName) {
+  pageState.sessionView = viewName;
+  document.querySelectorAll("[data-session-view]").forEach((button) => {
+    const selected = button.dataset.sessionView === viewName;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  document.querySelectorAll("[data-session-view-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.sessionViewPanel !== viewName;
+  });
+}
+
+/** Format a millisecond value for compact metric cards and rows. */
+function formatLatency(milliseconds) {
+  return typeof milliseconds === "number" ? `${Math.round(milliseconds)} ms` : "—";
+}
+
+/** Format a timestamp with both wall-clock time and elapsed session time. */
+function formatTimestampWithElapsed(value, sessionStart) {
+  if (!value) return "Unknown time";
+  const elapsed = Math.max(0, new Date(value).getTime() - sessionStart);
+  return `${formatDateTimeWithSeconds(value)} · +${(elapsed / 1000).toFixed(2)}s`;
+}
+
+/** Format a timestamp with seconds for logs and transcript rows. */
+function formatDateTimeWithSeconds(value) {
+  if (!value) return "Unknown time";
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value));
+}
+
+/** Format an elapsed duration for trace-axis tick labels. */
+function formatElapsedMilliseconds(milliseconds) {
+  return `+${(milliseconds / 1000).toFixed(1)}s`;
+}
+
+/** Format a timestamp consistently across the session details page. */
+function formatDateTime(value) {
+  if (!value) return "Unknown time";
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 /** Format the selected dashboard date without exposing implementation details. */
@@ -268,6 +748,7 @@ function renderAgentList() {
     ? "Try a different search or status filter."
     : "Create your first agent to start shaping a voice experience.";
   elements.list.querySelectorAll("[data-action='edit']").forEach((button) => button.addEventListener("click", () => openEditModal(button.dataset.agentId)));
+  elements.list.querySelectorAll("[data-action='metrics']").forEach((button) => button.addEventListener("click", () => loadAgentMetrics(button.dataset.agentId)));
   elements.list.querySelectorAll("[data-action='archive']").forEach((button) => button.addEventListener("click", () => archiveAgent(button.dataset.agentId)));
   elements.list.querySelectorAll("[data-action='activate']").forEach((button) => button.addEventListener("click", () => activateAgent(button.dataset.agentId)));
   elements.list.querySelectorAll("[data-action='call']").forEach((button) => button.addEventListener("click", () => startBrowserSession(button.dataset.agentId)));
@@ -283,7 +764,7 @@ function createAgentCardMarkup(agent) {
   const lifecycleAction = agent.runtime_status === "offline"
     ? `<button class="text-button" data-action="activate" data-agent-id="${agent.id}" type="button">Activate</button>`
     : `<button class="text-button delete" data-action="archive" data-agent-id="${agent.id}" type="button">Archive</button>`;
-  return `<article class="agent-card"><div class="agent-card-header"><div class="agent-avatar" aria-hidden="true">${initials}</div><span class="badge ${agent.runtime_status}">${agent.runtime_status}</span></div><h2>${escapeHtml(agent.name)}</h2><p class="agent-description">${escapeHtml(agent.description || "No description yet.")}</p><div class="agent-meta"><span>${escapeHtml(agent.model)}</span><span>·</span><span>Updated ${updatedDate}</span></div><div class="card-actions">${callAction}<button class="text-button" data-action="edit" data-agent-id="${agent.id}" type="button">Edit</button>${lifecycleAction}</div></article>`;
+  return `<article class="agent-card"><div class="agent-card-header"><div class="agent-avatar" aria-hidden="true">${initials}</div><span class="badge ${agent.runtime_status}">${agent.runtime_status}</span></div><h2>${escapeHtml(agent.name)}</h2><p class="agent-description">${escapeHtml(agent.description || "No description yet.")}</p><div class="agent-meta"><span>${escapeHtml(agent.model)}</span><span>·</span><span>${agent.language === "tr" ? "Turkish" : "English"}</span><span>·</span><span>Updated ${updatedDate}</span></div><div class="card-actions"><button class="text-button" data-action="metrics" data-agent-id="${agent.id}" type="button">Metrics</button>${callAction}<button class="text-button" data-action="edit" data-agent-id="${agent.id}" type="button">Edit</button>${lifecycleAction}</div></article>`;
 }
 
 /** Escape user-entered text before putting it into card markup. */
@@ -383,6 +864,7 @@ function openCreateModal() {
   pageState.editingAgentId = null;
   elements.form.reset();
   elements.agentId.value = "";
+  elements.language.value = "en";
   elements.modalEyebrow.textContent = "NEW AGENT";
   elements.modalTitle.textContent = "Create an agent";
   showModal();
@@ -398,6 +880,7 @@ function openEditModal(agentId) {
   elements.description.value = agent.description;
   elements.instructions.value = agent.instructions;
   elements.model.value = agent.model;
+  elements.language.value = agent.language || "en";
   elements.modalEyebrow.textContent = "EDIT AGENT";
   elements.modalTitle.textContent = "Edit agent";
   showModal();
@@ -432,6 +915,7 @@ async function saveAgent(event) {
     description: elements.description.value.trim(),
     instructions,
     model: elements.model.value,
+    language: elements.language.value,
   };
   const isEditing = Boolean(pageState.editingAgentId);
   const requestPath = isEditing ? `?id=${encodeURIComponent(pageState.editingAgentId)}` : "";
@@ -480,14 +964,22 @@ async function activateAgent(agentId) {
 /** Start the authenticated application and keep it synchronized with auth state. */
 async function initialiseApplication() {
   if (!supabaseClient) {
-    showError(elements.authError, "Supabase configuration is missing. Check supabase/.env.");
+    showError(elements.authError, missingConfigurationMessage());
     return;
   }
 
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
+  let initialRouteRestored = false;
+  const restoreInitialRoute = () => {
+    if (initialRouteRestored) return;
+    initialRouteRestored = true;
+    void restoreLastPage();
+  };
+
+  supabaseClient.auth.onAuthStateChange((event, session) => {
     if (session) {
       showApplication();
       void Promise.all([loadAgents(), loadDashboard()]);
+      if (event === "INITIAL_SESSION") restoreInitialRoute();
     } else {
       showAuthentication();
     }
@@ -499,6 +991,7 @@ async function initialiseApplication() {
   } else if (data.session) {
     showApplication();
     await Promise.all([loadAgents(), loadDashboard()]);
+    restoreInitialRoute();
   }
 }
 
@@ -518,6 +1011,18 @@ elements.seeAllSessionsButton.addEventListener("click", async () => {
   await loadAllSessions();
 });
 elements.backToDashboardButton.addEventListener("click", () => showPage("dashboard-page"));
+elements.backToSessionsButton.addEventListener("click", () => showPage("sessions-page"));
+document.querySelector("#back-to-agents-button").addEventListener("click", () => showPage("agents-page"));
+document.querySelector("#agent-see-all-sessions-button").addEventListener("click", async () => {
+  showPage("sessions-page");
+  await loadAllSessions(pageState.selectedAgentMetricsId);
+});
+document.querySelectorAll("[data-session-view]").forEach((button) => {
+  button.addEventListener("click", () => setSessionView(button.dataset.sessionView));
+});
+document.querySelectorAll("[data-trace-zoom]").forEach((button) => {
+  button.addEventListener("click", () => setTraceZoom(button.dataset.traceZoom));
+});
 elements.endCallButton.addEventListener("click", () => void finishBrowserSession("completed"));
 elements.muteCallButton.addEventListener("click", () => void toggleCallMute());
 document.querySelector("#close-modal-button").addEventListener("click", closeModal);

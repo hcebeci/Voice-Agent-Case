@@ -74,3 +74,17 @@ The LiveKit worker sends turn, trace, usage, and tool events to the internal
 `session-observability` function. The worker loads `SUPABASE_URL` and
 `SUPABASE_SECRET_KEY` from the private `supabase/.env` file. The secret key is
 used only by the backend worker and must never be placed in `ui/config.js`.
+
+Stage 2 read-only verification queries are in
+`supabase/manual-checks/stage-2-observability.sql`. Run them in the Supabase SQL
+Editor after a test call to inspect receipt duplicates, failed materialization,
+turn coverage, usage totals, latency aggregates, and stale sessions.
+
+## Agent metrics
+
+The Agent Metric Page uses the authenticated `agent-metrics` Edge Function. Deploy
+it from the repository root after changing its query or aggregation logic:
+
+```bash
+npx supabase functions deploy agent-metrics
+```

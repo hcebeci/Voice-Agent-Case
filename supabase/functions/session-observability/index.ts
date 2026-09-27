@@ -1,4 +1,5 @@
 import { withSupabase } from "npm:@supabase/server"
+import { usageTokenTotals } from "./usage.mjs"
 
 type ObservabilityEvent = {
   event_id?: unknown
@@ -138,6 +139,14 @@ async function materializeTurnEvent(adminClient: any, event: EventContext) {
       status: "completed",
       completed_at: event.occurred_at,
     })
+    return
+  }
+
+  if (event.event_type === "turn.cancelled") {
+    await upsertTurn(adminClient, event, {
+      status: "cancelled",
+      completed_at: event.occurred_at,
+    })
   }
 }
 
@@ -167,7 +176,7 @@ async function materializeTrace(adminClient: any, event: EventContext) {
     source: "agent_worker",
     source_event_id: event.event_id,
     sequence_number: event.sequence_number,
-  }, { onConflict: "id" })
+  }, { onConflict: "source,source_event_id" })
   if (error) throw new Error(error.message)
 }
 
@@ -223,10 +232,67 @@ async function materializeToolCall(adminClient: any, event: EventContext) {
   if (error) throw new Error(error.message)
 }
 
+/** Detect a repeated cumulative usage snapshot even when a retry has a new event ID. */
+async function isDuplicateSessionUsage(adminClient: any, event: EventContext): Promise<boolean> {
+  if (event.event_type !== "session.usage") return false
+
+  const totals = usageTokenTotals(event.payload)
+  const { data: metric, error: metricError } = await adminClient
+    .from("session_metrics")
+    .select("total_input_tokens, total_output_tokens")
+    .eq("session_id", event.session_id)
+    .maybeSingle()
+  if (metricError) throw new Error(metricError.message)
+  if (
+    metric &&
+    metric.total_input_tokens === totals.input &&
+    metric.total_output_tokens === totals.output
+  ) return true
+
+  // A previous event may exist after a partial materialization failure, so also
+  // compare recent receipts before deciding that this snapshot is new.
+  const { data: recentEvents, error: eventError } = await adminClient
+    .from("session_events")
+    .select("source_event_id, payload")
+    .eq("session_id", event.session_id)
+    .eq("event_type", "session.usage")
+    .neq("source_event_id", event.event_id)
+    .order("occurred_at", { ascending: false })
+    .limit(50)
+  if (eventError) throw new Error(eventError.message)
+  return (recentEvents ?? []).some((receipt: any) => {
+    const previousTotals = usageTokenTotals(asObject(receipt.payload))
+    return previousTotals.input === totals.input && previousTotals.output === totals.output
+  })
+}
+
+/** Persist cumulative session usage for agent-level token metrics. */
+async function materializeSessionUsage(adminClient: any, event: EventContext) {
+  const totals = usageTokenTotals(event.payload)
+  const { data: existing, error: existingError } = await adminClient
+    .from("session_metrics")
+    .select("total_input_tokens, total_output_tokens, captured_at")
+    .eq("session_id", event.session_id)
+    .maybeSingle()
+  if (existingError) throw new Error(existingError.message)
+
+  const inputTokens = Math.max(existing?.total_input_tokens ?? 0, totals.input)
+  const outputTokens = Math.max(existing?.total_output_tokens ?? 0, totals.output)
+  const isOlderSnapshot = existing && inputTokens === existing.total_input_tokens && outputTokens === existing.total_output_tokens
+  const { error } = await adminClient.from("session_metrics").upsert({
+    session_id: event.session_id,
+    total_input_tokens: inputTokens,
+    total_output_tokens: outputTokens,
+    captured_at: isOlderSnapshot ? existing.captured_at : event.occurred_at,
+  }, { onConflict: "session_id" })
+  if (error) throw new Error(error.message)
+}
+
 async function materialize(adminClient: any, event: EventContext) {
   if (event.event_type.startsWith("turn.")) await materializeTurnEvent(adminClient, event)
   if (event.event_type.startsWith("trace.")) await materializeTrace(adminClient, event)
   if (event.event_type.startsWith("tool.")) await materializeToolCall(adminClient, event)
+  if (event.event_type === "session.usage") await materializeSessionUsage(adminClient, event)
 }
 
 async function processEvent(adminClient: any, event: EventContext): Promise<boolean> {
@@ -250,15 +316,18 @@ async function processEvent(adminClient: any, event: EventContext): Promise<bool
     payload: event.payload,
   })
   if (insertError && insertError.code !== "23505") throw new Error(insertError.message)
+  const isSourceEventRetry = insertError?.code === "23505"
 
   try {
-    await materialize(adminClient, event)
+    const duplicateUsage = !isSourceEventRetry && await isDuplicateSessionUsage(adminClient, event)
+    if (!duplicateUsage) await materialize(adminClient, event)
     const { error } = await adminClient
       .from("session_events")
       .update({ processed_at: new Date().toISOString(), processing_error: null })
       .eq("source", "agent_worker")
       .eq("source_event_id", event.event_id)
     if (error) throw new Error(error.message)
+    if (duplicateUsage) return true
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown materialization error."
     await adminClient

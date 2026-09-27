@@ -13,7 +13,7 @@ import logging
 import time
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -32,6 +32,8 @@ def timestamp_from_seconds(seconds: float | None = None) -> str:
 def json_safe(value: Any) -> Any:
     """Convert provider objects into JSON-safe values without exposing failures."""
 
+    if is_dataclass(value) and not isinstance(value, type):
+        return json_safe(asdict(value))
     if hasattr(value, "model_dump"):
         try:
             return value.model_dump(mode="json")
@@ -67,6 +69,7 @@ class ObservabilityClient:
         self.endpoint = f"{supabase_url.rstrip('/')}/functions/v1/session-observability"
         self._secret_key = supabase_secret_key
         self._sequence_number = 0
+        self._last_session_usage_signature: str | None = None
         self._queue: asyncio.Queue[Observation | None] = asyncio.Queue()
         self._client = httpx.AsyncClient(timeout=10.0)
         self._sender_task = asyncio.create_task(self._send_queued_observations())
@@ -91,6 +94,28 @@ class ObservabilityClient:
                 payload=json_safe(dict(payload or {})),
             )
         )
+
+    def emit_session_usage_if_changed(
+        self,
+        usage: Any,
+        *,
+        occurred_at: float | None = None,
+        turn_number: int | None = None,
+    ) -> bool:
+        """Queue a usage snapshot only when its structured contents changed."""
+
+        usage_payload = json_safe(usage)
+        signature = json.dumps(usage_payload, sort_keys=True, separators=(",", ":"), default=str)
+        if signature == self._last_session_usage_signature:
+            return False
+        self._last_session_usage_signature = signature
+        self.emit_nowait(
+            "session.usage",
+            occurred_at=occurred_at,
+            turn_number=turn_number,
+            payload={"usage": usage_payload},
+        )
+        return True
 
     async def close(self) -> None:
         """Flush queued observations before closing the HTTP client."""
@@ -132,9 +157,21 @@ class ObservabilityClient:
         for attempt in range(3):
             try:
                 response = await self._client.post(self.endpoint, headers=headers, json=body)
-                response.raise_for_status()
+                if response.is_error:
+                    response_detail = response.text.replace("\n", " ")[:500]
+                    raise httpx.HTTPStatusError(
+                        f"Observability endpoint returned {response.status_code}: {response_detail}",
+                        request=response.request,
+                        response=response,
+                    )
                 return
-            except (httpx.HTTPError, ValueError):
+            except (httpx.HTTPError, ValueError) as error:
+                logger.warning(
+                    "Observability event %s failed on attempt %d/3 (%s)",
+                    observation.event_type,
+                    attempt + 1,
+                    error,
+                )
                 if attempt == 2:
                     raise
                 await asyncio.sleep(0.25 * (attempt + 1))
@@ -148,6 +185,8 @@ class TurnTracker:
     current_turn_number: int | None = None
     next_turn_number: int = 1
     active_tool_started_at: dict[str, float] = field(default_factory=dict)
+    active_user_speech_started_at: float | None = None
+    active_agent_speech_started_at: float | None = None
 
     def ensure_turn(self) -> int:
         """Return the current turn, creating the next one when necessary."""
@@ -161,13 +200,30 @@ class TurnTracker:
         """Record the VAD-backed moment when the user stops speaking."""
 
         turn_number = self.ensure_turn() if event.new_state == "speaking" else self.current_turn_number
+        if event.new_state == "speaking":
+            self.active_user_speech_started_at = event.created_at
         if event.old_state == "speaking" and event.new_state != "speaking":
             turn_number = self.ensure_turn()
+            started_at = self.active_user_speech_started_at or event.created_at
+            duration_ms = round(max(0.0, event.created_at - started_at) * 1000)
             self.client.emit_nowait(
                 "turn.user_speech_stopped",
                 occurred_at=event.created_at,
                 turn_number=turn_number,
             )
+            self.client.emit_nowait(
+                "trace.user_speaking",
+                occurred_at=event.created_at,
+                turn_number=turn_number,
+                payload={
+                    "started_at": timestamp_from_seconds(started_at),
+                    "ended_at": timestamp_from_seconds(event.created_at),
+                    "duration_ms": duration_ms,
+                    "status": "completed",
+                    "metadata": {"speaker": "user", "state": "speaking"},
+                },
+            )
+            self.active_user_speech_started_at = None
 
     def on_user_transcript(self, event: Any) -> None:
         """Persist only the final STT transcript, ignoring partial hypotheses."""
@@ -204,6 +260,7 @@ class TurnTracker:
 
         if event.new_state == "speaking":
             turn_number = self.ensure_turn()
+            self.active_agent_speech_started_at = event.created_at
             self.client.emit_nowait(
                 "turn.agent_audio_started",
                 occurred_at=event.created_at,
@@ -212,12 +269,77 @@ class TurnTracker:
         elif event.old_state == "speaking" and event.new_state != "speaking":
             if self.current_turn_number is None:
                 return
+            started_at = self.active_agent_speech_started_at or event.created_at
+            duration_ms = round(max(0.0, event.created_at - started_at) * 1000)
+            self.client.emit_nowait(
+                "trace.agent_speaking",
+                occurred_at=event.created_at,
+                turn_number=self.current_turn_number,
+                payload={
+                    "started_at": timestamp_from_seconds(started_at),
+                    "ended_at": timestamp_from_seconds(event.created_at),
+                    "duration_ms": duration_ms,
+                    "status": "completed",
+                    "metadata": {"speaker": "agent", "state": "speaking"},
+                },
+            )
             self.client.emit_nowait(
                 "turn.completed",
                 occurred_at=event.created_at,
                 turn_number=self.current_turn_number,
             )
             self.current_turn_number = None
+            self.active_agent_speech_started_at = None
+
+    def on_session_close(self, occurred_at: float | None = None) -> None:
+        """Close the final turn when the room ends before a normal state transition."""
+
+        if self.current_turn_number is None:
+            return
+        closed_at = occurred_at if isinstance(occurred_at, (int, float)) else time.time()
+        turn_number = self.current_turn_number
+        if self.active_user_speech_started_at is not None:
+            started_at = self.active_user_speech_started_at
+            duration_ms = round(max(0.0, closed_at - started_at) * 1000)
+            self.client.emit_nowait(
+                "turn.user_speech_stopped",
+                occurred_at=closed_at,
+                turn_number=turn_number,
+            )
+            self.client.emit_nowait(
+                "trace.user_speaking",
+                occurred_at=closed_at,
+                turn_number=turn_number,
+                payload={
+                    "started_at": timestamp_from_seconds(started_at),
+                    "ended_at": timestamp_from_seconds(closed_at),
+                    "duration_ms": duration_ms,
+                    "status": "completed",
+                    "metadata": {"speaker": "user", "state": "speaking", "closed_with_session": True},
+                },
+            )
+            self.active_user_speech_started_at = None
+        if self.active_agent_speech_started_at is not None:
+            started_at = self.active_agent_speech_started_at
+            duration_ms = round(max(0.0, closed_at - started_at) * 1000)
+            self.client.emit_nowait(
+                "trace.agent_speaking",
+                occurred_at=closed_at,
+                turn_number=turn_number,
+                payload={
+                    "started_at": timestamp_from_seconds(started_at),
+                    "ended_at": timestamp_from_seconds(closed_at),
+                    "duration_ms": duration_ms,
+                    "status": "completed",
+                    "metadata": {"speaker": "agent", "state": "speaking", "closed_with_session": True},
+                },
+            )
+            self.client.emit_nowait("turn.completed", occurred_at=closed_at, turn_number=turn_number)
+        else:
+            self.client.emit_nowait("turn.cancelled", occurred_at=closed_at, turn_number=turn_number)
+        self.current_turn_number = None
+        self.active_agent_speech_started_at = None
+        self.active_user_speech_started_at = None
 
     def on_component_metrics(self, component_name: str, metrics: Any) -> None:
         """Persist provider timing metrics as a completed waterfall span."""

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Create and manage voice agents." />
     <title>Agent Studio</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260927-6" />
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -83,6 +83,10 @@
               <div id="latest-session-list" class="session-list" aria-live="polite"></div>
             </article>
           </section>
+          <section class="dashboard-panel dashboard-agent-panel">
+            <div class="panel-heading"><div><p class="eyebrow">AGENTS</p><h2>Agent performance</h2></div><span class="panel-date">Open an agent to view metrics</span></div>
+            <div id="dashboard-agent-list" class="session-list" aria-live="polite"></div>
+          </section>
         </section>
 
         <section class="page-view" id="agents-page" hidden>
@@ -135,6 +139,78 @@
           </header>
           <section class="dashboard-panel sessions-page-panel">
             <div id="all-session-list" class="session-list" aria-live="polite"></div>
+          </section>
+        </section>
+
+        <section class="page-view" id="agent-metrics-page" hidden>
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">WORKSPACE / AGENT METRICS</p>
+              <h1 id="agent-metrics-title">Agent metrics</h1>
+              <p class="page-description" id="agent-metrics-description">Review performance, usage, latency stages, and recent sessions for this agent.</p>
+            </div>
+            <button class="secondary-button" id="back-to-agents-button" type="button">Back to agents</button>
+          </header>
+          <p class="page-error" id="agent-metrics-error" role="alert" hidden></p>
+          <section class="metric-grid agent-metrics-grid" aria-label="Agent metrics">
+            <article class="metric-card"><span class="metric-label">Total sessions</span><strong id="agent-total-sessions">0</strong><span class="metric-caption">All recorded sessions</span></article>
+            <article class="metric-card"><span class="metric-label">Concurrent sessions</span><strong id="agent-concurrent-sessions">0</strong><span class="metric-caption">Connecting or active</span></article>
+            <article class="metric-card"><span class="metric-label">Avg input tokens</span><strong id="agent-average-input-tokens">—</strong><span class="metric-caption">Per session</span></article>
+            <article class="metric-card"><span class="metric-label">Avg output tokens</span><strong id="agent-average-output-tokens">—</strong><span class="metric-caption">Per session</span></article>
+          </section>
+          <section class="dashboard-panel agent-latency-panel">
+            <div class="panel-heading"><div><p class="eyebrow">TIMING</p><h2>Latency and duration by stage</h2></div><span class="panel-date">Average · p50 · p95</span></div>
+            <div id="agent-latency-list" class="latency-stage-list"></div>
+          </section>
+          <section class="dashboard-panel agent-sessions-panel">
+            <div class="panel-heading"><div><p class="eyebrow">RECENT SESSIONS</p><h2>Latest five sessions</h2></div><button class="text-button" id="agent-see-all-sessions-button" type="button">See all</button></div>
+            <div id="agent-recent-session-list" class="session-list" aria-live="polite"></div>
+          </section>
+        </section>
+
+        <section class="page-view" id="session-details-page" hidden>
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">WORKSPACE / SESSION DETAILS</p>
+              <h1 id="session-details-title">Session details</h1>
+              <p class="page-description" id="session-details-description">Review the transcript, latency, traces, and tool activity for this call.</p>
+            </div>
+            <button class="secondary-button" id="back-to-sessions-button" type="button">Back to sessions</button>
+          </header>
+          <p class="page-error" id="session-details-error" role="alert" hidden></p>
+          <section class="metric-grid session-metrics-grid" aria-label="Session metrics">
+            <article class="metric-card"><span class="metric-label">Turns</span><strong id="session-turn-count">0</strong><span class="metric-caption">Recorded exchanges</span></article>
+            <article class="metric-card"><span class="metric-label">Average latency</span><strong id="session-average-latency">—</strong><span class="metric-caption">Agent first audio − user stopped</span></article>
+            <article class="metric-card"><span class="metric-label">p50 latency</span><strong id="session-p50-latency">—</strong><span class="metric-caption">Median completed turn</span></article>
+            <article class="metric-card"><span class="metric-label">p95 latency</span><strong id="session-p95-latency">—</strong><span class="metric-caption">Slower completed turns</span></article>
+            <article class="metric-card"><span class="metric-label">Input tokens</span><strong id="session-input-tokens">—</strong><span class="metric-caption">Total LLM input tokens</span></article>
+            <article class="metric-card"><span class="metric-label">Output tokens</span><strong id="session-output-tokens">—</strong><span class="metric-caption">Total LLM output tokens</span></article>
+          </section>
+          <section class="session-observability-shell">
+            <div class="session-view-tabs" role="tablist" aria-label="Session observability views">
+              <button class="session-view-tab active" data-session-view="transcript" role="tab" aria-selected="true" type="button">Transcript</button>
+              <button class="session-view-tab" data-session-view="logs" role="tab" aria-selected="false" type="button">Logs</button>
+              <button class="session-view-tab" data-session-view="traces" role="tab" aria-selected="false" type="button">Traces</button>
+            </div>
+
+            <section class="dashboard-panel session-details-panel session-view-panel" id="session-transcript-view" data-session-view-panel="transcript" role="tabpanel">
+              <div class="panel-heading"><div><p class="eyebrow">TRANSCRIPT</p><h2>Conversation turns</h2></div><span class="panel-date">Timestamped playback</span></div>
+              <div id="session-turn-list" class="turn-list scrollable-observability-list"></div>
+            </section>
+
+            <section class="dashboard-panel session-details-panel session-view-panel" id="session-logs-view" data-session-view-panel="logs" role="tabpanel" hidden>
+              <div class="panel-heading"><div><p class="eyebrow">SESSION LOGS</p><h2>Session events</h2></div><span class="panel-date">Occurred and received times</span></div>
+              <div id="session-event-list" class="event-list scrollable-observability-list"></div>
+            </section>
+
+            <section class="dashboard-panel session-details-panel session-view-panel" id="session-traces-view" data-session-view-panel="traces" role="tabpanel" hidden>
+              <div class="panel-heading"><div><p class="eyebrow">TRACES</p><h2>Processing timeline</h2></div><div class="trace-controls"><span class="panel-date">Relative to session start · wheel zoom · drag to pan</span><button class="trace-zoom-button" data-trace-zoom="out" type="button" aria-label="Zoom out">−</button><span id="trace-zoom-label" class="trace-zoom-label">100%</span><button class="trace-zoom-button" data-trace-zoom="in" type="button" aria-label="Zoom in">+</button><button class="trace-zoom-reset" data-trace-zoom="reset" type="button">Reset</button></div></div>
+              <div class="trace-workspace">
+                <div id="session-trace-viewport" class="trace-timeline-viewport scrollable-observability-list"><div id="session-trace-list" class="trace-timeline"></div></div>
+                <aside id="session-trace-detail" class="trace-detail-panel" aria-live="polite" hidden></aside>
+              </div>
+              <div id="session-tool-list" class="trace-tools-list" hidden></div>
+            </section>
           </section>
         </section>
       </main>
@@ -204,6 +280,14 @@
                   <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
                 </select>
               </label>
+              <label class="form-field">
+                <span>Language</span>
+                <select id="agent-language">
+                  <option value="en">English</option>
+                  <option value="tr">Turkish</option>
+                </select>
+                <small>Controls speech recognition, responses, and voice output.</small>
+              </label>
             </div>
           </div>
 
@@ -219,6 +303,6 @@
     <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
-    <script src="app.js" defer></script>
+    <script src="app.js?v=20260927-6" defer></script>
   </body>
 </html>
