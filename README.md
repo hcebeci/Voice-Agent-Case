@@ -38,6 +38,9 @@ a single shared organization: authenticated users share the application data.
 
 ## Run the full application
 
+After completing the setup below, use [Start the local web server](#3-start-the-local-web-server)
+and [Start the voice worker](#4-start-the-voice-worker) each time you run the application.
+
 The dashboard and worker run locally; this setup uses hosted Supabase and
 LiveKit Cloud services. The supplied voice pipeline uses LiveKit Inference.
 
@@ -111,9 +114,30 @@ room and participant lifecycle events. See the
 [webhook setup notes](supabase/README.md#livekit-lifecycle-webhooks) for the event list.
 This is needed for session lifecycle updates, including finalization after a call.
 
-### 3. Start the worker and dashboard
+### 3. Start the local web server
 
-In one terminal, from the repository root:
+Open a terminal in the repository root, the directory containing `start.py`,
+and run:
+
+```console
+python3 start.py
+```
+
+This starts the dashboard's HTTP server using Python's standard library;
+it needs no separate dependency installation or frontend build. On startup,
+it prints:
+
+```text
+Agent manager available at http://127.0.0.1:8000
+```
+
+Keep this terminal running and open <http://127.0.0.1:8000> in your browser.
+The server serves `ui/` and generates `/config.js` from `supabase/.env`.
+Use `start.py` to serve the dashboard so it receives this runtime configuration.
+
+### 4. Start the voice worker
+
+Open a second terminal in the repository root and run:
 
 ```console
 cd Livekit-Agents
@@ -121,11 +145,12 @@ uv sync
 lk agent dev
 ```
 
-In another terminal, from the repository root:
+Keep this terminal running too. The web server serves the dashboard; the worker
+handles voice conversations. Supabase APIs run as the deployed Edge Functions,
+and LiveKit runs in your Cloud project. This setup does not require another
+local API server or a local LiveKit server.
 
-```console
-python3 start.py
-```
+### 5. Verify the application
 
 Open <http://127.0.0.1:8000> and sign in. Create an agent, save its instructions
 and model settings, then choose **Start call** and allow microphone access.
@@ -141,6 +166,11 @@ If a call does not connect, check that the worker and Edge Functions use the
 same LiveKit project and that the worker is registered as `Voice-Agent-Case`.
 For missing session data, check webhook delivery and the worker's Supabase
 credentials.
+
+Stop the local web server and worker with **Ctrl+C** in their respective
+terminals. To start them again, repeat steps 3 and 4. If Python reports
+`Address already in use`, stop the process already listening on port 8000
+before restarting the server.
 
 The local dashboard server binds to `127.0.0.1:8000` and is intended for local
 development.
