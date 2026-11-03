@@ -1,152 +1,201 @@
 # Voice Agent Case
 
-Voice Agent Case is a browser-based voice-agent management application backed by
-Supabase and LiveKit. The Python agent can also run on its own without a
-Supabase project; that mode does not include the management dashboard or its
-saved agents and session history.
+A browser application for configuring voice agents, talking to them through
+LiveKit, and reviewing their sessions. Supabase provides authentication,
+persistence, and the backend APIs; a Python worker runs the voice pipeline.
 
-## System Overview
+## What you can do
 
-The repository has three runtime parts:
+- Create and edit agents with saved instructions, model, language, TTS model,
+  and enabled tools.
+- Start browser voice calls and review session history, transcripts, tool calls,
+  latency, and usage metrics.
+- Test customer-bound collection conversations with fictional customer records,
+  identity verification, payment commitments, and callback requests.
 
-- `ui/` is the browser dashboard. It supports sign-in, agent and tool
-  configuration, session views, and browser calls.
-- `start.py` serves the dashboard on `http://127.0.0.1:8000` and provides its
-  browser-safe Supabase URL and publishable key. It is a static-file server,
-  not the application API.
-- `supabase/` contains the database migrations, seed data, and Edge Functions.
-  Functions authenticate dashboard requests, manage agents and tools, create
-  LiveKit sessions, and process session, webhook, and observability data.
-- `Livekit-Agents/` contains the LiveKit Python worker. It joins dispatched
-  rooms, loads the agent configuration from job metadata (or uses its default
-  configuration), and runs the voice pipeline.
+Collection tools save commitments and callback requests. They do not process
+payments, schedule callbacks, or dial telephone numbers. Both call directions
+in the dashboard use browser audio.
 
-### Browser Call Flow
+## Architecture
 
-1. A signed-in user selects an agent in the dashboard.
-2. The dashboard calls the authenticated `livekit-session` Edge Function.
-3. That function loads the agent and enabled tools, records a configuration
-   snapshot, creates a LiveKit room and participant token, then dispatches the
-   `Voice-Agent-Case` worker.
-4. The browser connects to the room and publishes microphone audio. The worker
-   runs the conversation and returns audio.
-5. LiveKit webhooks update session lifecycle state. When configured, the worker
-   also sends observability events to Supabase for session details and metrics.
+| Component | Responsibility |
+| --- | --- |
+| `ui/` | Browser dashboard using Supabase Auth and the LiveKit client SDK. |
+| `start.py` | Local static-file server and browser configuration endpoint. |
+| `supabase/` | PostgreSQL schema, access policies, Edge Functions, and seed data. |
+| `Livekit-Agents/` | Python worker for speech recognition, LLM responses, speech synthesis, and tool execution. |
 
-The browser never receives the Supabase secret key or LiveKit API secret.
-Keep those values in backend environment files or Edge Function secrets.
+For a browser call, the authenticated `livekit-session` function loads the saved
+agent and enabled tools, snapshots the configuration, creates a room and browser
+token, and dispatches the worker registered as `Voice-Agent-Case`. The browser
+and worker exchange audio through LiveKit. Webhooks update session lifecycle
+state; the worker sends transcript, tool, and usage events to Supabase.
 
-## Choose How to Run It
+The browser receives the Supabase URL and publishable key. Backend processes
+hold the Supabase secret key and LiveKit API secret. The database currently uses
+a single shared organization: authenticated users share the application data.
 
-### Run the Agent Without Supabase
+## Run the full application
 
-Use this path to try the voice agent directly from the terminal. It requires
-LiveKit credentials, but does not require a Supabase account or project.
+The dashboard and worker run locally; this setup uses hosted Supabase and
+LiveKit Cloud services. The supplied voice pipeline uses LiveKit Inference.
 
-1. Install `uv` and the [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/).
-2. Create or use a LiveKit project and obtain `LIVEKIT_URL`,
-   `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`.
-3. From the repository root, configure and run the worker:
+### Prerequisites
 
-   ```console
-   cd Livekit-Agents
-   uv sync
-   cp .env.example .env.local
-   ```
+- Python 3.10–3.14 and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+- The [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/) (`lk`).
+- A LiveKit Cloud project with Inference access and its URL, API key, and API secret.
+- A Supabase project and the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started).
+  The commands below use `npx`, which requires Node.js and npm.
+- A browser with microphone access and an internet connection.
 
-   Put the three LiveKit values in `Livekit-Agents/.env.local`, then run:
-
-   ```console
-   lk agent console
-   ```
-
-   `lk agent console` starts an interactive terminal session. To run the worker
-   for a LiveKit frontend instead, use `lk agent dev` and connect a frontend to
-   the same LiveKit project.
-
-In this mode, the worker uses its built-in default agent configuration.
-Supabase-backed observability is skipped, and customer-bound collection calls
-are unavailable because they require trusted session and customer records.
-The repository's management dashboard and browser call flow also require
-Supabase.
-
-### Run the Full Dashboard and Browser Call Flow
-
-This mode requires a Supabase project and a LiveKit project. Supabase Auth and
-Edge Functions are part of the application, not optional local services.
-
-1. Configure a Supabase project and apply the database migrations in
-   `supabase/migrations/`. Follow [supabase/README.md](supabase/README.md) for
-   migration ordering, collection seed data, webhooks, and database checks.
-2. Configure Supabase Auth and create a user who can sign in to the dashboard.
-3. Copy `supabase/.env.example` to `supabase/.env` and set at least
-   `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`.
-   `SUPABASE_JWKS_URL` is optional. The dashboard uses only the URL and
-   publishable key; backend worker integrations use the secret key.
-4. Deploy the Supabase Edge Functions used by the dashboard from the repository
-   root. The function directories are under `supabase/functions/`. Configure
-   the required `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`
-   function secrets for browser session creation and webhook verification.
-5. In a terminal, start the LiveKit worker:
-
-   ```console
-   cd Livekit-Agents
-   uv sync
-   lk agent dev
-   ```
-
-   Make sure its `.env.local` contains the LiveKit credentials. For worker
-   observability and customer-bound sessions, it also needs the Supabase URL
-   and secret key; the worker can read these from `supabase/.env` at the
-   repository root.
-6. In another terminal at the repository root, start the dashboard:
-
-   ```console
-   python3 start.py
-   ```
-
-   Open `http://127.0.0.1:8000`, sign in, and start a call from an available
-   agent. Allow microphone access when prompted.
-
-The local dashboard server binds to `127.0.0.1`; it is intended for local
-development, not direct public hosting.
-
-## Tests
-
-Run the Python worker tests from `Livekit-Agents/`:
+Clone the repository and run the following setup from its root:
 
 ```console
-uv run pytest
+git clone https://github.com/hcebeci/Voice-Agent-Case.git
+cd Voice-Agent-Case
+cp supabase/.env.example supabase/.env
+cp Livekit-Agents/.env.example Livekit-Agents/.env.local
 ```
 
-LiveKit conversation simulations are defined in
-[`Livekit-Agents/scenarios.yaml`](Livekit-Agents/scenarios.yaml) and can be run
-with the LiveKit CLI:
+If you already have the repository or populated environment files, use those.
+
+### 1. Configure credentials
+
+| File | Required values | Used by |
+| --- | --- | --- |
+| `supabase/.env` | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` | Local dashboard configuration and worker integrations. |
+| `Livekit-Agents/.env.local` | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Python worker. |
+
+`SUPABASE_JWKS_URL` is optional. Keep populated environment files private;
+`start.py` exposes only the URL and publishable key to the browser.
+
+### 2. Set up Supabase
+
+Apply the SQL files in the order listed in the
+[database setup guide](supabase/README.md#database-setup). That includes the
+manual agent-history migration and the observability index migration.
+For customer-bound tests, also run `supabase/seeds/collection_customers.sql`.
+
+In Supabase Auth, create a confirmed email/password user. The dashboard has a
+sign-in form; it does not create user accounts.
+
+Authenticate the CLI, link your project, and deploy all Edge Functions from the
+repository root. Replace `<project-ref>` with your Supabase project reference:
+
+```console
+npx supabase login
+npx supabase link --project-ref <project-ref>
+npx supabase functions deploy
+```
+
+This deploys `agents`, `tools`, `dashboard`, `sessions`, `agent-metrics`,
+`test-cases`, `livekit-session`, `livekit-webhook`, and `session-observability`.
+The deployment uses the per-function authentication settings in
+`supabase/config.toml`. See the [Supabase deployment guide](https://supabase.com/docs/guides/functions/deploy)
+for CLI details.
+
+In Supabase **Edge Functions → Secrets**, set `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
+and `LIVEKIT_API_SECRET` to the same project credentials as the worker.
+Local environment files do not configure deployed function secrets.
+
+In LiveKit Cloud, configure a webhook pointing to:
+
+```text
+https://<project-ref>.supabase.co/functions/v1/livekit-webhook
+```
+
+Use the same LiveKit API key configured in the Edge Function secrets and enable
+room and participant lifecycle events. See the
+[webhook setup notes](supabase/README.md#livekit-lifecycle-webhooks) for the event list.
+This is needed for session lifecycle updates, including finalization after a call.
+
+### 3. Start the worker and dashboard
+
+In one terminal, from the repository root:
 
 ```console
 cd Livekit-Agents
+uv sync
+lk agent dev
+```
+
+In another terminal, from the repository root:
+
+```console
+python3 start.py
+```
+
+Open <http://127.0.0.1:8000> and sign in. Create an agent, save its instructions
+and model settings, then choose **Start call** and allow microphone access.
+A normal conversation can run without a customer or assigned collection tools.
+
+For customer-bound conversations, assign the supported tools to the agent and
+select a seeded customer in **Tests**. Follow the
+[collection tool guide](Livekit-Agents/COLLECTION_TOOLS.md) for prerequisites
+and expected behavior.
+
+After ending a call, check its transcript and metrics in the session history.
+If a call does not connect, check that the worker and Edge Functions use the
+same LiveKit project and that the worker is registered as `Voice-Agent-Case`.
+For missing session data, check webhook delivery and the worker's Supabase
+credentials.
+
+The local dashboard server binds to `127.0.0.1:8000` and is intended for local
+development.
+
+## Run only the voice agent
+
+This path needs a LiveKit Cloud project, Python, uv, and the LiveKit CLI. It
+works without Supabase or the dashboard.
+
+From the repository root:
+
+```console
+cd Livekit-Agents
+uv sync
+cp .env.example .env.local
+```
+
+Fill in `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in
+`.env.local`, then start an interactive terminal conversation:
+
+```console
+lk agent console
+```
+
+The worker uses its built-in assistant configuration when no job configuration
+is supplied. Without Supabase credentials, application session persistence and
+customer tools are unavailable. For a custom LiveKit frontend, run
+`lk agent dev` and explicitly dispatch the agent named `Voice-Agent-Case`.
+
+## Validation
+
+Run the Python worker tests:
+
+```console
+cd Livekit-Agents
+uv run pytest
+```
+
+Run the JavaScript tests from the repository root with Node.js:
+
+```console
+node --test ui/tests/*.test.cjs supabase/functions/*/*.test.mjs
+```
+
+Optional conversation simulations, from `Livekit-Agents/`:
+
+```console
 lk agent simulate --scenarios scenarios.yaml
 ```
 
-Simulations use LiveKit services and may incur inference usage. See
-[Livekit-Agents/README.md](Livekit-Agents/README.md) for agent development,
-frontend options, and deployment guidance.
+These scenarios exercise the default assistant, rather than the full dashboard
+or customer workflow. They use LiveKit Cloud and may incur inference charges.
 
-## Repository Map
+## Further reading
 
-```text
-start.py                 Local dashboard file server
-ui/                      Browser dashboard
-supabase/
-  functions/             Authenticated APIs and LiveKit callbacks
-  migrations/            Database schema and policy changes
-  seeds/                 Optional development/test data
-Livekit-Agents/
-  src/                   Python LiveKit worker and integrations
-  tests/                 Worker tests
-  scenarios.yaml         LiveKit conversation simulations
-```
-
-Do not commit populated `.env` files, API keys, or secrets. See the
-[LiveKit agent README](Livekit-Agents/README.md) and
-[Supabase setup notes](supabase/README.md) for component-specific instructions.
+- [Worker setup and source map](Livekit-Agents/README.md)
+- [Database setup and backend checks](supabase/README.md)
+- [Collection tools, state transitions, and validation](Livekit-Agents/COLLECTION_TOOLS.md)

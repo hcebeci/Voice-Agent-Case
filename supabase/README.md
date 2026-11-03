@@ -2,6 +2,30 @@
 
 This directory contains the database foundation for the single-organization MVP.
 
+## Database setup
+
+For a new project, open Supabase **SQL Editor** and run these files one at a
+time, in this order. Paths are relative to this directory:
+
+1. `migrations/20260925_000001_initial_schema.sql`
+2. `manual-migrations/20260925_000002_agent_change_history.sql`
+3. `migrations/20260926000001_livekit_webhook_events.sql`
+4. `migrations/20260926000002_observability_event_contract.sql`
+5. `migrations/20260926000003_observability_processing_state.sql`
+6. `migrations/20260927000001_collection_customers.sql`
+7. `migrations/20260927000002_agent_tts_settings.sql`
+8. `migrations/20260927000003_collection_tools.sql`
+9. `migrations/20260928000001_observability_upsert_indexes.sql`
+
+The manual audit-history migration is outside the CLI migration directory and
+must be included explicitly. For an existing project, apply only outstanding
+migrations using its migration history; some files are not safe to rerun.
+
+For customer-bound tests, also execute `seeds/collection_customers.sql` and
+validate with `manual-checks/collection-customers.sql`. The collection-tool
+migration registers four supported tools; no migration creates an agent.
+Create your first agent through the dashboard after signing in.
+
 ## Collection customer database
 
 Apply `migrations/20260927000001_collection_customers.sql` after the existing
@@ -9,10 +33,10 @@ foundation, then execute `seeds/collection_customers.sql`. Validate with
 `manual-checks/collection-customers.sql`. The seed inserts missing account
 references only: rerunning it never resets customers or deletes call history.
 
-The six named records are fictional assessment fixtures. DOBs, postal codes,
+The six named records are fictional test records. DOBs, postal codes,
 balances, interest, and credit-reporting statuses are invented. Phone numbers
 are null until an authorized test destination is supplied. Every account uses
-`Europe/Istanbul`; currency remains USD as in the agreed draft. Balances already
+`Europe/Istanbul`; currency is USD. Balances already
 include the stored interest component. No interest calculation, payment, or
 credit-bureau submission happens when these records are created.
 
@@ -33,10 +57,10 @@ or clear existing data. The due date is the original account due date, not a
 future promise-to-pay date.
 
 Both the table and context view are backend-only (no anonymous or authenticated
-browser grants). The view excludes verification answers. Future tools must
-enforce session verification before returning its debt details, and redact DOB
-and postal-code inputs from tool logs. Policy `collection-demo-v1` identifies
-the draft procedure; its tool implementation is a later step.
+browser grants). The view excludes verification answers. Collection tools enforce session
+verification before returning debt details and redact DOB and postal-code inputs
+from tool logs. Policy `collection-demo-v1` identifies
+the collection procedure implemented by the worker and database RPCs.
 
 The customer migration creates the account foundation. The subsequent
 `migrations/20260927000003_collection_tools.sql` adds worker-only collection
@@ -44,25 +68,6 @@ sessions, operation receipts, payment commitments, callback requests, atomic RPC
 and the four tool definitions. See `../Livekit-Agents/COLLECTION_TOOLS.md` for
 activation, policy, privacy, retries, and testing instructions. The new tool
 migration must be applied separately before enabling customer-bound calls.
-
-## Run the first migration
-
-1. Open the Supabase dashboard for the project.
-2. Open **SQL Editor** and create a new query.
-3. Copy the contents of `migrations/20260925_000001_initial_schema.sql` into the query.
-4. Run the query once.
-5. Open **Table Editor** and confirm the tables are present.
-
-After the first migration succeeds, run the manually applied audit migration in
-`manual-migrations/20260925_000002_agent_change_history.sql`, then apply
-`migrations/20260926000001_livekit_webhook_events.sql`,
-`migrations/20260926000002_observability_event_contract.sql` and
-`migrations/20260926000003_observability_processing_state.sql`, and finally
-`migrations/20260927000002_agent_tts_settings.sql`. New migrations use full
-timestamps so Supabase can track each version uniquely.
-
-The migration is safe to run again because it uses `if not exists` for tables and
-replaces its policies and triggers. It does not seed any tools or agents.
 
 ## Values needed locally
 
