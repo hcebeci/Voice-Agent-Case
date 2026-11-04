@@ -169,9 +169,23 @@ Open <http://127.0.0.1:8000> and sign in. Create an agent, save its instructions
 and model settings, then choose **Start call** and allow microphone access.
 A normal conversation can run without a customer or assigned collection tools.
 
-For customer-bound conversations, assign the supported tools to the agent and
-select a seeded customer in **Tests**. Follow the
-[collection tool guide](Livekit-Agents/COLLECTION_TOOLS.md) for prerequisites
+### Test a call with a mock customer
+
+Mock customers are fictional database records. You speak as the selected
+customer through your browser; they do not answer automatically.
+
+1. Complete the database setup, including `supabase/seeds/collection_customers.sql`.
+2. Create an agent with collection instructions and assign its supported tools.
+3. Open **Tests** and select an **Agent** and **Customer to play**.
+4. Choose **Agent calls user** (the agent speaks first) or **User calls agent**
+   (you speak first).
+5. Click **Start test call** and allow microphone access.
+6. Use the displayed date of birth and postal code when the agent asks you to
+   verify the customer's identity.
+7. End the call, then select **View last test call** to inspect its results.
+
+Both directions use browser audio; neither dials a phone number. See the
+[collection tool guide](Livekit-Agents/COLLECTION_TOOLS.md) for tool prerequisites
 and expected behavior.
 
 After ending a call, check its transcript and metrics in the session history.
