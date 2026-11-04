@@ -4,6 +4,10 @@ This directory contains the database foundation for the single-organization MVP.
 
 ## Database setup
 
+For complete command-line provisioning, Auth user creation, function deployment,
+and initial agent configuration, follow the [setup runbook](../docs/SETUP.md).
+The ordered SQL list below is also suitable for Supabase SQL Editor.
+
 For a new project, open Supabase **SQL Editor** and run these files one at a
 time, in this order. Paths are relative to this directory:
 

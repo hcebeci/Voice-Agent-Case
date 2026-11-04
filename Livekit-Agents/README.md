@@ -39,14 +39,19 @@ Keep all populated environment files private.
 Talk to the default assistant in the terminal:
 
 ```console
-lk agent console
+uv run --env-file .env.local lk agent console
 ```
 
 Run the worker with source reload for dashboard or custom frontend calls:
 
 ```console
-lk agent dev
+uv run --env-file .env.local lk agent dev
 ```
+
+Passing `.env.local` through uv makes its LiveKit credentials available to the
+CLI before project resolution, avoiding the existing deployment reference in
+`livekit.toml`. Clear stale exported LiveKit credentials when switching projects.
+For full database and API bootstrap, follow the [setup runbook](../docs/SETUP.md).
 
 Custom frontends must explicitly dispatch `Voice-Agent-Case`. The dashboard's
 `livekit-session` function handles this automatically. Browser calls require a
@@ -80,7 +85,7 @@ uv run pytest
 Optional default-assistant conversation simulations:
 
 ```console
-lk agent simulate --scenarios scenarios.yaml
+uv run --env-file .env.local lk agent simulate --scenarios scenarios.yaml
 ```
 
 Simulations use LiveKit Cloud and may incur inference charges. They do not cover
@@ -96,7 +101,3 @@ deployment secrets; repository-local environment files are not deployed.
 Keep the registered worker name aligned with the session API's dispatch name.
 See the [LiveKit deployment guide](https://docs.livekit.io/deploy/agents/) for
 hosting instructions.
-
-## License
-
-The worker is licensed under the [MIT License](LICENSE).

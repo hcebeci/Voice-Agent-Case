@@ -1,6 +1,6 @@
 # Agents Edge Function
 
-This authenticated endpoint is the first backend slice for the agent editor.
+Manage saved agent configurations and their change history.
 
 ## Supported requests
 
@@ -14,6 +14,7 @@ This authenticated endpoint is the first backend slice for the agent editor.
 Every request requires a Supabase user access token. The function uses the
 request user's Supabase context, so database row-level security remains active.
 
-The endpoint intentionally does not calculate `active`, `sleeping`, or `offline`.
-Those states require session data and will be derived by the application query
-once browser sessions are connected.
+Read responses include `runtime_status` and `active_session_count`. An archived
+agent is `offline`; otherwise it is `active` when a session is connecting or
+active, and `sleeping` when there are no such sessions. These values describe
+saved session state, not worker availability.
