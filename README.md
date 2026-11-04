@@ -36,6 +36,19 @@ The browser receives the Supabase URL and publishable key. Backend processes
 hold the Supabase secret key and LiveKit API secret. The database currently uses
 a single shared organization: authenticated users share the application data.
 
+## Application sections
+
+| Section | Function |
+| --- | --- |
+| **Dashboard** | View agent status, daily activity, recent sessions, and performance. |
+| **Agents** | Create and configure agents, assign tools, and start browser calls. |
+| **Tools** | Manage shared tool definitions and enable them for assignment to agents. |
+| **Tests** | Run browser conversations with fictional customers and inspect the results. |
+| **Settings** | Navigation placeholder; a settings page is not implemented. |
+
+The **Tests** page is for interactive conversation testing. Automated tests are
+described in [Validation](#validation).
+
 ## Run the full application
 
 After completing the setup below, use [Start the local web server](#3-start-the-local-web-server)
