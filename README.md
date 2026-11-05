@@ -242,19 +242,21 @@ explicitly dispatch the worker named `Voice-Agent-Case`.
 ### Test scope
 
 This table describes implemented checks, not execution results or a measured
-coverage percentage. Some newer suites are local additions; see the
+coverage percentage. The suites below are included in the repository; see the
 [scope and evidence guide](docs/TEST_SCOPE.md) for revision boundaries,
 validation layers, and concrete scenario examples.
 
 | Area | What is checked | Test method / boundary |
 | --- | --- | --- |
-| Agent configuration | Supplied instructions, enabled tools, dispatch configuration, and selected voices. | Configuration and scripted SDK tests; not a complete dashboard-to-worker call. Voice checks include local additions. |
+| Agent configuration | Supplied instructions, enabled tools, dispatch configuration, and selected voices. | Configuration and scripted SDK tests; not a complete dashboard-to-worker call. |
 | Collection rules | Identity-attempt limits, payment amount/date boundaries, and required review/confirmation order. | Deterministic policy and tool tests; scripted calls do not establish language understanding. |
-| Failure handling | Selected lost-response, retry, startup, and event-delivery cases. | Simulated failures and local storage checks; not arbitrary outages or unlimited logging durability. Some suites are local additions. |
-| Browser call logic | Customer/direction selection, microphone-error handling, and transcript ordering. | Simulated browser, room, microphone, and API objects; not real audio or browser rendering. Transcript checks include local additions. |
-| Session reporting | Usage aggregation, turn/tool events, and webhook-to-status mappings. | Helper and event tests; webhook helpers do not verify signed HTTP delivery. |
-| Database and handlers | Fresh migrations, selected access rules, transaction rollback, and event projections. | Local PostgreSQL integration suites; external authentication is modeled, not hosted. These suites are local additions. |
-| Conversation behavior | Selected expected tool effects with scripted or real-model conversations. | Scripted evaluations are deterministic; real-model/audio checks are separate opt-in runs. New collection scenarios are local additions. |
+| Failure handling | Selected lost-response, retry, startup, and event-delivery cases. | Simulated failures and local storage checks; not arbitrary outages or unlimited logging durability. |
+| Browser call logic | Customer/direction selection, microphone-error handling, and transcript ordering. | Simulated browser, room, microphone, and API objects; not real audio or browser rendering. |
+| Session reporting | Usage aggregation, turn/tool events, webhook-to-status mappings, and tool/trace consistency during reversed or concurrent event replay. | Helpers plus real SQL/handler integration; external auth is injected, and signed webhook delivery is not tested. |
+| Database and handlers | Fresh migrations, selected access rules, transaction rollback, and event projections. | Local PostgreSQL integration suites; external authentication is modeled, not hosted. |
+| Retained validation | Report provenance, immutable replay, and rejection of conflicting or unauthorized report input. | Handler fixtures and database assertions; not deployed authentication or human verdict accuracy. |
+| Performance regressions | Retry/backoff decisions, SQLite capture work under a backlog, transcript rendering work, and call controls during a delayed dashboard refresh. | Deterministic operation/order checks and local fixtures; not a guaranteed real-call latency or production load result. |
+| Conversation behavior | Selected expected tool effects with scripted or real-model conversations. | Scripted evaluations are deterministic; real-model/audio checks are separate opt-in runs. |
 
 The [scenario examples](docs/TEST_SCOPE.md#specific-scenario-examples) state the
 setup, action, expected assertion, and boundary for each check. A manual
@@ -275,6 +277,17 @@ JavaScript tests, from the repository root:
 node --test ui/tests/*.test.cjs supabase/functions/*/*.test.mjs
 ```
 
+Database/handler integration and answer-speed report tests, from the repository root:
+
+```console
+python3 scripts/test-platform-database.py
+python3 -m unittest discover -s tests -p 'test_answer_speed.py'
+```
+
+The database runner needs the PostgreSQL tools listed in the
+[validation guide](docs/VALIDATION.md#3-real-sql-and-handler-boundaries). It uses
+a disposable local cluster, not the configured application database.
+
 Free scripted collection scenarios, from `Livekit-Agents/`:
 
 ```console
@@ -286,6 +299,11 @@ Fictional customer DOB/postal information remains uncensored. The Tests page can
 retain human audio reviews and browse validation history after setup/deployment.
 See the [validation guide](docs/VALIDATION.md) for real-model/audio scenarios,
 isolated PostgreSQL integration tests, logging durability and evidence limits.
+
+The [offline CI workflow](.github/workflows/validation.yml) runs the maintained
+JavaScript/Python checks, scripted scenarios, and disposable-database integration,
+and retains run artifacts. It does not run paid model/audio evaluations or prove
+that a hosted deployment works. Check the actual run results before claiming a pass.
 
 ## Troubleshooting and reference
 

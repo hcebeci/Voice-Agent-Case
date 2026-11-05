@@ -6,12 +6,12 @@ result. The [README](../README.md#test-scope) summarizes scope; the
 
 ## Revision and result boundaries
 
-This inventory describes the current local checkout. Several suites, runners,
-and collection simulation fixtures are modified or untracked and are not in
-published commit `b6e9c92`. Publish the associated implementations, migrations,
-and tests together before describing them as available from a fresh clone.
-The published commit's simulation file contains starter-assistant scenarios;
-the local replacement contains collection scenarios.
+This inventory was rechecked against committed revision `06ac0b4` on
+6 November 2026. Voice, database/handler, evaluation, audio-scenario, and CI files
+are now committed; the earlier unpublished-files warning no longer applies.
+The main `scenarios.yaml` contains collection scenarios, `scenarios.audio.yaml`
+contains an audio interruption scenario, and `scenarios.starter.yaml` retains
+the starter-assistant scenarios. Included fixtures are not completed runs.
 
 Keep three statements separate:
 
@@ -31,13 +31,11 @@ location. Retain unsuccessful and inconclusive runs too.
 | --- | --- | --- |
 | Policy and helper tests | Specific inputs produce the asserted state transitions, validations, or calculated values. | Do not exercise a complete service or call. |
 | Scripted SDK and browser-logic tests | SDK/tool mechanics and UI logic behave as asserted when supplied known model outputs or simulated events. | Model output, browser objects, and service transports may be replaced. They do not establish spoken behavior or natural-language interpretation. |
-| Local database/handler integration | Selected migrations, permissions, transactions, projections, and handler interactions work against disposable PostgreSQL. | Local additions. Supabase roles/identity are modeled and external adapters are injected; hosted JWT verification, gateway behavior, and network delivery are not established. |
+| Local database/handler integration | Selected migrations, permissions, transactions, projections, and handler interactions work against disposable PostgreSQL. | Supabase roles/identity are modeled and external adapters are injected; hosted JWT verification, gateway behavior, and network delivery are not established. |
 | Real-model text evaluation | Checks a selected model's actual responses and tool choices against the case's assertions. | Opt-in inference. The collection evaluation uses synthetic state and replaced remote database transport; it does not verify hosted persistence or audio. |
 | Hosted text/audio simulation | Selected simulated conversations exercise model behavior or the speech pipeline and are graded for expected outcomes. | Opt-in, may incur charges. Authored fixtures are not completed runs; audio simulation is not a real microphone, deployed dashboard, or telephone test. |
 | Manual deployment acceptance | A person checks the actual deployed sign-in, browser audio, session delivery, and visible results. | A separate recorded execution, not an automatic consequence of passing unit or integration tests. |
 
-The newer database runners and collection evaluation/simulation files are local
-additions. Available layers differ between the published commit and this checkout.
 Scripted tests are most repeatable; real-model and audio results can vary. A
 single passing model conversation does not establish general conversational reliability.
 
@@ -56,11 +54,27 @@ they are not statements that the checks passed in this review.
 | Given a verification write whose response is lost, retry through the backend → the failed identity attempt is counted once. | [`test_lost_write_response_recovers_without_counting_verification_twice`](../Livekit-Agents/tests/test_collection_runtime.py) | Mock HTTP transport and in-memory state. Does not establish every retry, database concurrency, or semantic duplicate-intent case. |
 | Given a call whose microphone operation rejects, start it → clear the active call, disconnect the room, show failure, and request failed session status. | [`microphone failure marks session failed and disconnects room`](../ui/tests/test-calls.test.cjs) | Simulated DOM, microphone, room, and API. Does not actually deny browser permission or prove the server saved the update. |
 | Given an active session and `room_finished`, calculate a lifecycle update → produce completed status and the supplied end timestamp. | [`room finish completes an active session`](../supabase/functions/livekit-webhook/lifecycle.test.mjs) | Pure helper assertion. Does not send a signed webhook, authenticate it, or persist the result. |
+| Given a tool result before its start event, then replay or concurrently deliver the start → retain the terminal tool/trace status and fill the original arguments without duplicating the records. | [Ordered-tool SQL assertions](../supabase/tests/ordered-tool-observability.sql) and [concurrent handler integration](../tests/integration/observability.mts) | Real disposable PostgreSQL, including separate concurrent connections; injected external auth/SDK adapter. Does not verify deployed network ordering or throughput. |
+| Given an existing manual report, replay its original capture after late telemetry → return the unchanged first snapshot, without rereading and replacing the evidence. | [Retained-report handler tests](../supabase/functions/test-runs/handler.test.mjs) | Handler fixtures with simulated database tables; not a hosted API request or proof the human verdict is correct. |
+| Given a pending dashboard refresh after call connection → show active call controls without waiting for that refresh. | [Connected-call controls test](../ui/tests/latency.test.cjs) | Simulated browser and unresolved promise; verifies dependency ordering, not microphone latency or a millisecond response target. |
 
 For new examples, avoid universal phrases such as “all retries are safe” or
 “the agent understands confirmation.” Describe the particular input, assertion,
 and execution layer instead. If an example has no implemented assertion, label
 it **planned** or **manual**, rather than adding it to automated scope.
+
+## CI and execution evidence
+
+The [offline validation workflow](../.github/workflows/validation.yml) runs
+JavaScript regressions, answer-speed report tests, worker pytest with the
+real-model case disabled, scripted collection scenarios, and the disposable
+PostgreSQL/handler integration runner. Artifacts are retained for 30 days,
+including available failure evidence. Individual later steps can be skipped
+when an earlier step fails; inspect the job log and artifacts to establish what ran.
+
+The workflow does not run paid inference/audio simulations, publish reports to
+production, or validate a hosted deployment. Workflow configuration is evidence
+that checks are scheduled, not that a particular revision passed them.
 
 ## Manual acceptance checklist
 

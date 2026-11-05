@@ -1,5 +1,10 @@
 # Test coverage review
 
+This is a historical review of the working tree inspected on 5 November 2026.
+Its counts, gaps, and publication-status notes describe that snapshot, not the
+current checkout. See [Test scope and evidence](TEST_SCOPE.md) for the updated
+inventory. The results below have not been relabeled as runs of newer revisions.
+
 Reviewed on 5 November 2026 by a three-reviewer engineering team covering Python
 agent behavior, database/API reliability, and frontend/deployment verification.
 The coordinator executed the maintained checks and independently reproduced the
@@ -13,7 +18,7 @@ database access/atomicity rules. Its strongest evidence is about application
 logic. It provides much less assurance about real browser wiring, deployed
 authentication, speech delivery, and ordinary-language decisions.
 
-This review describes the **current local working tree**, including modified and
+This review describes the **working tree inspected at review time**, including modified and
 untracked tests and implementations. It does not imply that a fresh GitHub clone
 or deployed version contains all of these checks. No numerical line or branch
 coverage was measured. Test counts are execution results, not coverage percentages.

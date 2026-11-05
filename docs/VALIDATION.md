@@ -69,6 +69,8 @@ Coverage includes:
 - Actual observability Request/Response handler, SQL projections and session
   detail serializer agree after duplicate and reverse-order deliveries.
 - A late older transcript cannot overwrite a newer transcript.
+- Tool results arriving before starts, duplicate retries, and concurrent event
+  transactions retain consistent terminal tool/trace status and record identity.
 - First-audio latency is calculated after either timestamp arrives; a negative
   interval stays unknown rather than being displayed as an invented zero.
 - Partial event processing recovers on retry without duplicating events/traces.
