@@ -3,7 +3,7 @@
  * verification and browser rendering are separate checks, not claimed here.
  */
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -113,4 +113,54 @@ await deliver(event("session.usage","2026-11-05T10:00:04Z",{usage:{model_usage:[
 details=await (await loadSessionDetails(db,sid)).json();
 assert.equal(details.metrics.total_input_tokens,100,"older cumulative usage must not replace newer totals");
 assert.equal(details.metrics.total_output_tokens,50);
+
+const toolStart=event("tool.started","2026-11-05T10:00:06Z",{tool_call_id:"reversed-tool",tool_name:"evaluate_offer",arguments:{amount:25}});
+const toolEnd=event("tool.succeeded","2026-11-05T10:00:07Z",{tool_call_id:"reversed-tool",tool_name:"evaluate_offer",result:{accepted:true},duration_ms:1000});
+await deliver(toolEnd); await deliver(toolStart); await deliver(toolEnd);
+let savedTool=JSON.parse(sql(`select row_to_json(t) from tool_calls t where source_event_id=${q(sid+":reversed-tool")}`));
+assert.equal(savedTool.status,"succeeded");
+assert.deepEqual(savedTool.arguments,{amount:25});
+assert.equal(sql(`select status from session_traces where id=${q(savedTool.trace_id)}`),"completed");
+
+// Two real PostgreSQL connections: hold the terminal projection uncommitted,
+// prove the late start waits on its lock, then release it and inspect both rows.
+const concurrentStart=event("tool.started","2026-11-05T10:00:08Z",{tool_call_id:"concurrent-tool",tool_name:"evaluate_offer",arguments:{amount:40}});
+const concurrentEnd=event("tool.succeeded","2026-11-05T10:00:09Z",{tool_call_id:"concurrent-tool",tool_name:"evaluate_offer",result:{accepted:true},duration_ms:1000});
+const holder=spawn(psql[0],[...psql.slice(1),"-q","-A","-t"],{stdio:["pipe","pipe","pipe"]});
+let heldOutput="", heldError="";
+holder.stderr.on("data",chunk=>{heldError+=chunk;});
+const held=new Promise<void>((resolveHeld,rejectHeld)=>{
+  holder.stdout.on("data",chunk=>{heldOutput+=chunk;if(heldOutput.includes("TOOL_LOCK_HELD"))resolveHeld();});
+  holder.on("error",rejectHeld);
+  holder.on("exit",code=>{if(!heldOutput.includes("TOOL_LOCK_HELD"))rejectHeld(new Error(heldError||`Lock holder exited ${code}`));});
+});
+const exited=new Promise<void>((resolveExit,rejectExit)=>holder.on("exit",code=>code===0?resolveExit():rejectExit(new Error(heldError))));
+holder.stdin.write(`begin; select public.observe_tool_event(${q(concurrentEnd)}::jsonb);\n\\echo TOOL_LOCK_HELD\n`);
+try {
+  await held;
+  const applicationName="tool-race-"+crypto.randomUUID();
+  const waiting=new Promise<void>((resolveWait,rejectWait)=>{
+    execFile(psql[0],[...psql.slice(1),"-A","-t","-c",`select public.observe_tool_event(${q(concurrentStart)}::jsonb)`],
+      {env:{...process.env,PGAPPNAME:applicationName}},(error)=>error?rejectWait(error):resolveWait());
+  });
+  let blocked=false;
+  for(let attempt=0;attempt<100;attempt++) {
+    blocked=sql(`select exists(select 1 from pg_stat_activity where application_name=${q(applicationName)} and wait_event_type='Lock')`)==="t";
+    if(blocked)break;
+    await new Promise(resolveWait=>setTimeout(resolveWait,10));
+  }
+  assert.equal(blocked,true,"Concurrent start must wait for the terminal transaction");
+  holder.stdin.end("commit;\n");
+  await Promise.all([exited,waiting]);
+} finally {
+  if(!holder.stdin.writableEnded)holder.stdin.end("rollback;\n");
+}
+savedTool=JSON.parse(sql(`select row_to_json(t) from tool_calls t where source_event_id=${q(sid+":concurrent-tool")}`));
+assert.equal(savedTool.status,"succeeded");
+assert.deepEqual(savedTool.arguments,{amount:40});
+const savedSpan=JSON.parse(sql(`select row_to_json(t) from session_traces t where id=${q(savedTool.trace_id)}`));
+assert.equal(savedSpan.status,"completed");
+assert.ok(savedSpan.ended_at);
+assert.equal(savedSpan.sequence_number,savedTool.sequence_number);
+console.log("PASS real tool projection: terminal-before-start, retry, concurrent connections serialize both tool and trace");
 console.log("PASS real observability handler -> PostgreSQL -> session serializer: reverse arrival, stale revisions, duplicate events/traces, recoverable outage, uncensored synthetic transcript");
