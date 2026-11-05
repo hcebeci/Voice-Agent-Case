@@ -3,10 +3,12 @@ import json
 import logging
 import os
 import textwrap
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import httpx
 from dotenv import load_dotenv
 from livekit.agents import (
     Agent,
@@ -22,7 +24,13 @@ from livekit.plugins import ai_coustics
 
 from collection_agent import ConfiguredAssistant
 from collection_backend import CollectionBackend
-from observability import ObservabilityClient, TurnTracker
+from observability import (
+    ObservabilityClient,
+    TurnTracker,
+    json_safe,
+    timestamp_from_seconds,
+)
+from voice_configuration import resolve_voice
 
 logger = logging.getLogger("agent")
 
@@ -87,6 +95,64 @@ DEFAULT_INSTRUCTIONS = textwrap.dedent(
 )
 
 
+def register_transcript_handlers(
+    session: AgentSession, turn_tracker: TurnTracker
+) -> None:
+    """Persist full user and agent text, including identity-verification turns."""
+
+    @session.on("user_input_transcribed")
+    def on_user_input_transcribed(event):
+        turn_tracker.on_user_transcript(event)
+
+    @session.on("conversation_item_added")
+    def on_conversation_item_added(event):
+        turn_tracker.on_conversation_item(event)
+
+
+class EvaluationObservations:
+    """Retain complete synthetic telemetry locally without a remote client."""
+
+    def __init__(self, store):
+        self.store = store
+        if not hasattr(store, "observations"):
+            store.observations = []
+        self._last_session_usage_signature = None
+
+    def emit_nowait(
+        self, event_type, *, occurred_at=None, turn_number=None, payload=None
+    ):
+        self.store.observations.append(
+            {
+                "event_type": event_type,
+                "occurred_at": timestamp_from_seconds(occurred_at),
+                "sequence_number": len(self.store.observations) + 1,
+                "turn_number": turn_number,
+                "payload": json_safe(dict(payload or {})),
+            }
+        )
+        return True
+
+    emit_session_usage_if_changed = ObservabilityClient.emit_session_usage_if_changed
+
+    async def close(self):
+        pass
+
+
+def register_component_metrics_handlers(session, turn_tracker):
+    """Listen on the actual session providers before the first inference."""
+    for component_name, component in (
+        ("stt", session.stt),
+        ("llm", session.llm),
+        ("tts", session.tts),
+    ):
+        if component is None:
+            continue
+
+        @component.on("metrics_collected")
+        def on_component_metrics(metrics, name=component_name):
+            turn_tracker.on_component_metrics(name, metrics)
+
+
 def parse_job_metadata(raw_metadata: str | None, room_name: str) -> dict[str, Any]:
     """Parse dispatch metadata without allowing malformed input to stop a call."""
 
@@ -100,7 +166,9 @@ def parse_job_metadata(raw_metadata: str | None, room_name: str) -> dict[str, An
         return {}
 
     if not isinstance(decoded_metadata, dict):
-        logger.warning("Ignoring non-object LiveKit job metadata for room %s", room_name)
+        logger.warning(
+            "Ignoring non-object LiveKit job metadata for room %s", room_name
+        )
         return {}
     return decoded_metadata
 
@@ -120,12 +188,13 @@ def session_id_from_room_name(room_name: str) -> str | None:
 
 def validate_browser_configuration(metadata, room_name):
     """Never turn a misrouted UI call into the default assistant."""
-    if room_name.startswith("browser-"):
-        if (metadata.get("session_id") != session_id_from_room_name(room_name)
-                or not metadata.get("agent_id")
-                or not isinstance(metadata.get("instructions"), str)
-                or not metadata["instructions"].strip()):
-            raise ValueError("Browser session configuration is missing or invalid")
+    if room_name.startswith("browser-") and (
+        metadata.get("session_id") != session_id_from_room_name(room_name)
+        or not metadata.get("agent_id")
+        or not isinstance(metadata.get("instructions"), str)
+        or not metadata["instructions"].strip()
+    ):
+        raise ValueError("Browser session configuration is missing or invalid")
 
 
 def resolve_agent_configuration(
@@ -140,13 +209,15 @@ def resolve_agent_configuration(
         instructions = DEFAULT_INSTRUCTIONS
 
     raw_model = metadata.get("model")
-    model = raw_model.strip() if isinstance(raw_model, str) and raw_model.strip() else "google/gemma-4-31b-it"
+    model = (
+        raw_model.strip()
+        if isinstance(raw_model, str) and raw_model.strip()
+        else "google/gemma-4-31b-it"
+    )
     language = metadata.get("language")
     if not isinstance(language, str) or language not in {"en", "tr"}:
         language = "en"
-    tts_model = metadata.get("tts_model")
-    if not isinstance(tts_model, str) or tts_model not in {"cartesia/sonic-3", "inworld/inworld-tts-2"}:
-        tts_model = "inworld/inworld-tts-2"
+    tts_model, _ = resolve_voice(metadata)
 
     language_name = "Turkish" if language == "tr" else "English"
     instructions = (
@@ -154,7 +225,6 @@ def resolve_agent_configuration(
         f"{instructions}"
     )
     return instructions, model, language, tts_model, instruction_source
-
 
 
 async def start_call_direction(session, direction):
@@ -169,11 +239,54 @@ async def start_call_direction(session, direction):
 server = AgentServer()
 
 
-@server.rtc_session(agent_name="Voice-Agent-Case")
+def evaluation_mode(simulation):
+    """Use the simulator transport enum, not the configured speech providers."""
+    from livekit.agents.simulation import SimulationMode
+
+    return (
+        "automated_audio"
+        if simulation.simulation_mode == SimulationMode.SIMULATION_MODE_AUDIO
+        else "automated_text"
+    )
+
+
+async def finish_evaluation_simulation(simulation):
+    """Keep the simulation grading import off the ordinary call path."""
+    from evaluation import finish_simulation
+
+    await finish_simulation(simulation)
+
+
+@server.rtc_session(
+    agent_name="Voice-Agent-Case", on_simulation_end=finish_evaluation_simulation
+)
 async def my_agent(ctx: JobContext):
-    metadata = parse_job_metadata(ctx.job.metadata, ctx.room.name)
-    validate_browser_configuration(metadata, ctx.room.name)
-    instructions, model, language, tts_model, instruction_source = resolve_agent_configuration(metadata)
+    simulation = ctx.simulation_context()
+    evaluation_scenario = None
+    evaluation_store = None
+    collection_backend = None
+    if simulation is not None:
+        from evaluation import make_evaluation_backend
+
+        evaluation_scenario = simulation.userdata()
+        if (
+            not isinstance(evaluation_scenario, dict)
+            or evaluation_scenario.get("evaluation") is not True
+        ):
+            raise ValueError(
+                "Simulation requires an explicit synthetic evaluation scenario"
+            )
+        collection_backend, evaluation_store = make_evaluation_backend(
+            evaluation_scenario
+        )
+        metadata = dict(evaluation_scenario["configuration"])
+        metadata["call_direction"] = "user_calls_agent"
+    else:
+        metadata = parse_job_metadata(ctx.job.metadata, ctx.room.name)
+        validate_browser_configuration(metadata, ctx.room.name)
+    instructions, model, language, tts_model, instruction_source = (
+        resolve_agent_configuration(metadata)
+    )
     session_id = metadata.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         session_id = session_id_from_room_name(ctx.room.name)
@@ -205,11 +318,19 @@ async def my_agent(ctx: JobContext):
     background_tasks: set[asyncio.Task] = set()
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_secret_key = os.getenv("SUPABASE_SECRET_KEY")
-    if session_id and supabase_url and supabase_secret_key:
-        observability_client = ObservabilityClient(session_id, supabase_url, supabase_secret_key)
+    if evaluation_store is not None:
+        observability_client = EvaluationObservations(evaluation_store)
         turn_tracker = TurnTracker(observability_client)
+    elif session_id and supabase_url and supabase_secret_key:
+        observability_client = ObservabilityClient(
+            session_id, supabase_url, supabase_secret_key
+        )
+        turn_tracker = TurnTracker(observability_client)
+        ctx.add_shutdown_callback(observability_client.close)
     else:
-        logger.warning("Observability is not configured for session %s", session_id or "unknown")
+        logger.warning(
+            "Observability is not configured for session %s", session_id or "unknown"
+        )
 
     def start_background_task(coroutine):
         """Keep an asynchronous telemetry task alive until it completes."""
@@ -219,21 +340,57 @@ async def my_agent(ctx: JobContext):
         task.add_done_callback(background_tasks.discard)
         return task
 
-    enabled_tools = metadata.get("enabled_tools", [])
-    verification_required = bool(set(enabled_tools) & {"verify_identity", "evaluate_offer", "create_payment_commitment"})
-    collection_backend = None
-    if metadata.get("customer_bound") is True:
+    if evaluation_store is not None:
+        # MockTransport executes the production transitions against synthetic data.
+        # Never construct a remote database or telemetry client for a simulation.
+        await collection_backend.startup_snapshot()
+        ctx.add_shutdown_callback(collection_backend.close)
+    elif metadata.get("customer_bound") is True:
         if not (session_id and supabase_url and supabase_secret_key):
             raise RuntimeError("Collection calls require a trusted database session")
-        collection_backend = CollectionBackend(session_id, supabase_url, supabase_secret_key)
-        snapshot = await collection_backend.snapshot("startup")
+        collection_backend = CollectionBackend(
+            session_id, supabase_url, supabase_secret_key
+        )
+        try:
+            snapshot = await collection_backend.startup_snapshot()
+        except (
+            httpx.HTTPError,
+            asyncio.TimeoutError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ) as exc:
+            logger.error("Collection startup unavailable: %s", type(exc).__name__)
+            await collection_backend.close()
+            if observability_client:
+                observability_client.emit_nowait(
+                    "session.startup_failed",
+                    payload={
+                        "code": "COLLECTION_BACKEND_UNAVAILABLE",
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                await observability_client.close()
+            ctx.shutdown(reason="collection backend unavailable")
+            return
         if not snapshot or snapshot["session_status"] not in {"connecting", "active"}:
             await collection_backend.close()
-            raise RuntimeError("Collection session is not active or bound to a customer")
+            raise RuntimeError(
+                "Collection session is not active or bound to a customer"
+            )
         ctx.add_shutdown_callback(collection_backend.close)
 
     # Set up a voice AI pipeline using AssemblyAI, the selected LiveKit Inference TTS model, and the turn detector
     session = AgentSession(
+        userdata={
+            "evaluation_store": evaluation_store,
+            "evaluation_scenario": evaluation_scenario,
+            "evaluation_started_at": datetime.now(timezone.utc).isoformat(),
+            "evaluation_mode": evaluation_mode(simulation),
+        }
+        if evaluation_store is not None
+        else None,
+        llm=inference.LLM(model=model),
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
         # See all available models at https://docs.livekit.io/agents/models/stt/
         stt=inference.STT(model="assemblyai/universal-3-5-pro", language=language),
@@ -241,7 +398,7 @@ async def my_agent(ctx: JobContext):
         # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
         tts=inference.TTS(
             model=tts_model,
-            voice="Ashley" if tts_model == "inworld/inworld-tts-2" else "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+            voice=resolve_voice(metadata)[1],
             language=language,
         ),
         turn_handling=TurnHandlingOptions(
@@ -266,21 +423,12 @@ async def my_agent(ctx: JobContext):
     )
 
     if turn_tracker and observability_client:
+
         @session.on("user_state_changed")
         def on_user_state_changed(event):
             turn_tracker.on_user_state_changed(event)
 
-        @session.on("user_input_transcribed")
-        def on_user_input_transcribed(event):
-            if verification_required and collection_backend and not collection_backend.verified:
-                event = event.model_copy(update={"transcript": "[verification turn redacted]"})
-            turn_tracker.on_user_transcript(event)
-
-        @session.on("conversation_item_added")
-        def on_conversation_item_added(event):
-            if verification_required and collection_backend and not collection_backend.verified:
-                event = event.model_copy(update={"item": event.item.model_copy(update={"content": ["[verification turn redacted]"]})})
-            turn_tracker.on_conversation_item(event)
+        register_transcript_handlers(session, turn_tracker)
 
         @session.on("agent_state_changed")
         def on_agent_state_changed(event):
@@ -303,23 +451,16 @@ async def my_agent(ctx: JobContext):
             turn_tracker.on_session_close(getattr(event, "created_at", None))
             start_background_task(observability_client.close())
 
-        for component_name, component in (
-            ("stt", session.stt),
-            ("llm", session.llm),
-            ("tts", session.tts),
-        ):
-            if component is None:
-                continue
-
-            @component.on("metrics_collected")
-            def on_component_metrics(metrics, name=component_name):
-                turn_tracker.on_component_metrics(name, metrics)
+        register_component_metrics_handlers(session, turn_tracker)
 
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=ConfiguredAssistant(backend=collection_backend, instructions=instructions,
-                                  enabled_tools=metadata.get("enabled_tools", []),
-                                  language=language, llm=inference.LLM(model=model)),
+        agent=ConfiguredAssistant(
+            backend=collection_backend,
+            instructions=instructions,
+            enabled_tools=metadata.get("enabled_tools", []),
+            language=language,
+        ),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(

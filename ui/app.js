@@ -22,6 +22,12 @@ function missingConfigurationMessage() {
 
 const pageState = { testCustomers: [], testsLoading: false, testAgentReady: false, callStarting: false, agents: [], tools: [], editingAgentId: null, editingToolId: null, dashboard: null, liveSession: null, selectedSessionId: null, selectedAgentMetricsId: null, sessionDetailsPollTimer: null, sessionView: "transcript", traceZoom: 1 };
 const elements = {
+  agentSaveButton: document.querySelector("#save-agent-button"),
+  sessionLoadMore: document.querySelector("#session-load-more"),
+  validationHistory: document.querySelector("#validation-history"),
+  validationError: document.querySelector("#validation-error"),
+  validationLoadMore: document.querySelector("#validation-load-more"),
+  validationDetail: document.querySelector("#validation-detail"),
   authScreen: document.querySelector("#auth-screen"),
   appShell: document.querySelector("#app-shell"),
   signInForm: document.querySelector("#sign-in-form"),
@@ -100,10 +106,15 @@ const elements = {
   model: document.querySelector("#agent-model"),
   language: document.querySelector("#agent-language"),
   ttsModel: document.querySelector("#agent-tts-model"),
+  voice: document.querySelector("#agent-voice"),
   callModal: document.querySelector("#call-modal"),
   callStatus: document.querySelector("#call-status"),
   callAgentName: document.querySelector("#call-agent-name"),
   callError: document.querySelector("#call-error"),
+  callCustomerDetails: document.querySelector("#call-customer-details"),
+  callTranscript: document.querySelector("#call-transcript"),
+  callTranscriptStatus: document.querySelector("#call-transcript-status"),
+  callSessionLink: document.querySelector("#call-session-link"),
   muteCallButton: document.querySelector("#mute-call-button"),
   endCallButton: document.querySelector("#end-call-button"),
   remoteAudioContainer: document.querySelector("#remote-audio-container"),
@@ -133,6 +144,7 @@ function showApplication() {
 /** Return the user to the sign-in screen after logout or an expired session. */
 function showAuthentication() {
   stopSessionDetailsPolling();
+  void releaseAuthenticatedCall();
   elements.appShell.hidden = true;
   elements.authScreen.hidden = false;
 }
@@ -159,6 +171,7 @@ function showPage(pageId) {
       pageId,
       sessionId: pageState.selectedSessionId,
       agentId: pageState.selectedAgentMetricsId,
+      historyAgentId: pageState.historyAgentId,
     }));
   } catch {
     // Continue normally when the browser blocks session storage.
@@ -205,7 +218,10 @@ async function signIn(event) {
 
 /** Sign out and let Supabase clear the browser session. */
 async function signOut() {
+  await releaseAuthenticatedCall();
   if (supabaseClient) await supabaseClient.auth.signOut();
+  pageState.pendingCallRequests = {};
+  try { sessionStorage.removeItem("agent-studio-pending-calls"); } catch { /* Storage may be blocked. */ }
   pageState.agents = [];
   pageState.testCustomers = [];
   elements.testCustomerDetails.replaceChildren();
@@ -236,11 +252,18 @@ async function callAgentsApi(path = "", options = {}) {
 
 /** Load the dashboard summary from the authenticated dashboard endpoint. */
 async function loadDashboard() {
+  const requestGeneration = (pageState.dashboardRequestGeneration ?? 0) + 1;
+  pageState.dashboardRequestGeneration = requestGeneration;
+  const authGeneration = pageState.authGeneration ?? 0;
+  const isCurrent = () => requestGeneration === pageState.dashboardRequestGeneration
+    && authGeneration === (pageState.authGeneration ?? 0);
   try {
     const response = await callWorkspaceApi("dashboard");
+    if (!isCurrent()) return;
     pageState.dashboard = response;
     renderDashboard(response);
   } catch (error) {
+    if (!isCurrent()) return;
     showError(elements.pageError, error.message);
   }
 }
@@ -262,7 +285,12 @@ async function callWorkspaceApi(functionName, path = "", options = {}) {
     },
   });
   const responseBody = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(responseBody.error ?? "The workspace request failed.");
+  if (!response.ok) {
+    const error = new Error(responseBody.error ?? "The workspace request failed.");
+    error.code = responseBody.code;
+    error.status = response.status;
+    throw error;
+  }
   return responseBody;
 }
 
@@ -315,15 +343,36 @@ function selectedAgentToolAssignments() {
   return [...elements.agentToolSelection.querySelectorAll("input[data-agent-tool-id]:checked")].map((input) => ({ tool_id: input.dataset.agentToolId, configuration: {} }));
 }
 
-/** Load all sessions for the full-session history page. */
-async function loadAllSessions(agentId = null) {
+/** Load saved history in stable pages, retaining the selected agent. */
+async function loadAllSessions(agentId = null, { append = false } = {}) {
+  if (append && pageState.sessionsLoading) return;
+  const request = (pageState.historyRequest ?? 0) + 1;
+  pageState.historyRequest = request;
+  pageState.sessionsLoading = true;
+  if (!append) {
+    pageState.historyAgentId = agentId;
+    pageState.sessionHistory = [];
+    pageState.historyCursor = null;
+    if (!elements.sessionsPage.hidden) showPage("sessions-page");
+  }
+  elements.sessionLoadMore.disabled = true;
   try {
-    const query = new URLSearchParams({ limit: "100" });
-    if (agentId) query.set("agent_id", agentId);
+    const query = new URLSearchParams({ limit: "50" });
+    if (pageState.historyAgentId) query.set("agent_id", pageState.historyAgentId);
+    if (append && pageState.historyCursor) query.set("cursor", pageState.historyCursor);
     const response = await callWorkspaceApi("sessions", `?${query.toString()}`);
-    renderSessionList(elements.allSessionList, response.sessions ?? [], "No sessions have been recorded yet.");
+    if (request !== pageState.historyRequest) return;
+    pageState.sessionHistory.push(...(response.sessions ?? []));
+    pageState.historyCursor = response.next_cursor ?? null;
+    renderSessionList(elements.allSessionList, pageState.sessionHistory, "No sessions have been recorded yet.");
+    elements.sessionLoadMore.hidden = !pageState.historyCursor;
   } catch (error) {
-    showError(elements.pageError, error.message);
+    if (request === pageState.historyRequest) showError(elements.pageError, error.message);
+  } finally {
+    if (request === pageState.historyRequest) {
+      pageState.sessionsLoading = false;
+      elements.sessionLoadMore.disabled = false;
+    }
   }
 }
 
@@ -347,6 +396,7 @@ function startSessionDetailsPolling(sessionId) {
 
 /** Load one session and optionally refresh it without changing the current view. */
 async function loadSessionDetails(sessionId, { background = false } = {}) {
+  if (!background) stopSessionDetailsPolling();
   pageState.selectedSessionId = sessionId;
   clearError(elements.sessionDetailsError);
   if (!background) {
@@ -356,11 +406,12 @@ async function loadSessionDetails(sessionId, { background = false } = {}) {
   }
   try {
     const response = await callWorkspaceApi("sessions", `?id=${encodeURIComponent(sessionId)}`);
+    if (pageState.selectedSessionId !== sessionId) return;
     renderSessionDetails(response);
     if (["connecting", "active"].includes(response.session?.status)) startSessionDetailsPolling(sessionId);
     else stopSessionDetailsPolling();
   } catch (error) {
-    if (!background) showError(elements.sessionDetailsError, error.message);
+    if (!background && pageState.selectedSessionId === sessionId) showError(elements.sessionDetailsError, error.message);
   }
 }
 
@@ -403,6 +454,7 @@ async function loadAgentMetrics(agentId) {
   showPage("agent-metrics-page");
   try {
     const response = await callWorkspaceApi("agent-metrics", `?id=${encodeURIComponent(agentId)}`);
+    if (pageState.selectedAgentMetricsId !== agentId) return;
     renderAgentMetrics(response);
   } catch (error) {
     showError(elements.agentMetricsError, error.message);
@@ -427,7 +479,7 @@ async function restoreLastPage() {
     return;
   }
   const hashPage = { dashboard: "dashboard-page", agents: "agents-page", tools: "tools-page", tests: "tests-page", sessions: "sessions-page" }[hashRoute];
-  if (hashPage) storedState = { pageId: hashPage };
+  if (hashPage) storedState = { ...(storedState ?? {}), pageId: hashPage };
   if (!storedState?.pageId) return;
   if (storedState.pageId === "session-details-page" && storedState.sessionId) {
     await loadSessionDetails(storedState.sessionId);
@@ -453,7 +505,7 @@ async function restoreLastPage() {
   }
   if (storedState.pageId === "sessions-page") {
     showPage("sessions-page");
-    await loadAllSessions();
+    await loadAllSessions(storedState.historyAgentId ?? null);
   }
 }
 
@@ -525,8 +577,9 @@ function renderSessionDetails(details) {
   const metrics = details.metrics ?? {};
   const turns = details.turns ?? [];
   const traces = details.traces ?? [];
+  const tools = details.tool_calls ?? [];
   const events = details.events ?? [];
-  const sessionStart = getSessionStartTimestamp(session, turns, traces, events);
+  const sessionStart = getSessionStartTimestamp(session, turns, [...traces, ...tools], events);
   elements.sessionDetailsTitle.textContent = sessionAgent?.name ? `${sessionAgent.name} session` : "Session details";
   elements.sessionDetailsDescription.textContent = `${formatDateTime(session.created_at)} · ${session.status?.replaceAll("_", " ") ?? "unknown"}`;
   elements.sessionTurnCount.textContent = metrics.turn_count ?? 0;
@@ -544,8 +597,30 @@ function renderSessionDetails(details) {
     }).join("")
     : `<p class="session-empty">No conversation turns have been recorded yet.</p>`;
 
-  const tools = details.tool_calls ?? [];
-  renderTraceTimeline(elements.sessionTraceList, traces, sessionStart, session);
+  // Older sessions may have tool_calls without a materialized trace span. Add
+  // a compatible fallback so historical tool executions are visible too; new
+  // sessions already include trace.tool rows from session-observability.
+  const persistedToolTraceIds = new Set(traces.filter((trace) => trace.event_type === "trace.tool").map((trace) => trace.id));
+  const fallbackToolTraces = tools
+    .filter((tool) => !tool.trace_id || !persistedToolTraceIds.has(tool.trace_id))
+    .map((tool) => ({
+      id: `tool-${tool.id}`,
+      turn_id: tool.turn_id,
+      event_type: "trace.tool",
+      started_at: tool.started_at,
+      ended_at: tool.completed_at || tool.started_at,
+      duration_ms: tool.duration_ms,
+      status: tool.status === "failed" ? "failed" : tool.status === "started" ? "running" : "completed",
+      metadata: {
+        tool_call_id: tool.id,
+        tool_name: tool.tool_name,
+        arguments: tool.arguments,
+        result: tool.result,
+        error_message: tool.error_message,
+      },
+      raw_payload: tool,
+    }));
+  renderTraceTimeline(elements.sessionTraceList, [...traces, ...fallbackToolTraces], sessionStart, session);
   elements.sessionToolList.hidden = true;
 
   elements.sessionToolList.innerHTML = tools.length
@@ -663,7 +738,7 @@ function renderTraceParentLane(label, startedAt, endedAt, sessionStart, totalDur
 
 /** Render one processing lane while preserving its full event name for hover and details. */
 function renderTraceLane(traces, traceIndex, sessionStart, totalDuration) {
-  const traceName = traces[0].event_type.replace("trace.", "").replaceAll("_", " ");
+  const traceName = getTraceDisplayName(traces[0]);
   const bars = traces.map((trace) => renderTraceBar(trace, traceIndex.get(trace), sessionStart, totalDuration)).join("");
   const totalDurationMs = traces.reduce((total, trace) => total + (getTraceDurationMs(trace) ?? 0), 0);
   const spanCount = `${traces.length} span${traces.length === 1 ? "" : "s"}`;
@@ -676,9 +751,17 @@ function renderTraceBar(trace, index, sessionStart, totalDuration) {
   const endOffset = Math.max(startOffset + 1, new Date(trace.ended_at || trace.started_at).getTime() - sessionStart);
   const left = Math.min(99, startOffset / totalDuration * 100);
   const width = Math.max(1, Math.min(100 - left, (endOffset - startOffset) / totalDuration * 100));
-  const traceName = trace.event_type.replace("trace.", "").replaceAll("_", " ");
-  const hoverLabel = `${trace.event_type} · ${formatTimestampWithElapsed(trace.started_at, sessionStart)} · ${formatLatency(getTraceDurationMs(trace))}`;
+  const traceName = getTraceDisplayName(trace);
+  const hoverLabel = `${traceName} · ${formatTimestampWithElapsed(trace.started_at, sessionStart)} · ${formatLatency(getTraceDurationMs(trace))}`;
   return `<button class="trace-bar trace-${escapeHtml(trace.event_type.replace("trace.", ""))}" data-trace-index="${index}" type="button" style="left:${left}%;width:${width}%" title="${escapeHtml(hoverLabel)}" aria-label="${escapeHtml(hoverLabel)}">${escapeHtml(traceName)}</button>`;
+}
+
+/** Prefer the concrete tool name while keeping provider spans human-readable. */
+function getTraceDisplayName(trace) {
+  if (trace.event_type === "trace.tool" && typeof trace.metadata?.tool_name === "string") {
+    return trace.metadata.tool_name.replaceAll("_", " ");
+  }
+  return trace.event_type.replace("trace.", "").replaceAll("_", " ");
 }
 
 /** Attach cursor, hover, and click behavior to the shared trace timeline. */
@@ -734,7 +817,7 @@ function renderTraceDetail(trace, sessionStart) {
   const endedAt = trace.ended_at || trace.started_at;
   const metadata = trace.metadata && Object.keys(trace.metadata).length ? `<pre>${escapeHtml(JSON.stringify(trace.metadata, null, 2))}</pre>` : `<p class="trace-detail-empty">No attributes recorded.</p>`;
   const rawPayload = trace.raw_payload && Object.keys(trace.raw_payload).length ? `<pre>${escapeHtml(JSON.stringify(trace.raw_payload, null, 2))}</pre>` : `<p class="trace-detail-empty">No raw payload recorded.</p>`;
-  elements.sessionTraceDetail.innerHTML = `<div class="trace-detail-header"><div><p class="eyebrow">TRACE DETAILS</p><h3>${escapeHtml(trace.event_type)}</h3></div><button class="icon-button" data-close-trace-detail type="button" aria-label="Close trace details">×</button></div><div class="trace-detail-grid"><div><span>Start time</span><strong>${escapeHtml(formatDateTimeWithSeconds(startedAt))}</strong></div><div><span>End time</span><strong>${escapeHtml(formatDateTimeWithSeconds(endedAt))}</strong></div><div><span>Elapsed start</span><strong>${escapeHtml(formatTimestampWithElapsed(startedAt, sessionStart))}</strong></div><div><span>Duration</span><strong>${escapeHtml(formatLatency(getTraceDurationMs(trace)))}</strong></div><div><span>Status</span><strong>${escapeHtml(trace.status || "unknown")}</strong></div><div><span>Turn</span><strong>${escapeHtml(trace.turn_id || "Session")}</strong></div></div><div class="trace-detail-attributes"><span>Attributes</span>${metadata}</div><div class="trace-detail-attributes"><span>Raw payload</span>${rawPayload}</div>`;
+  elements.sessionTraceDetail.innerHTML = `<div class="trace-detail-header"><div><p class="eyebrow">TRACE DETAILS</p><h3>${escapeHtml(getTraceDisplayName(trace))}</h3><span class="trace-detail-event-type">${escapeHtml(trace.event_type)}</span></div><button class="icon-button" data-close-trace-detail type="button" aria-label="Close trace details">×</button></div><div class="trace-detail-grid"><div><span>Start time</span><strong>${escapeHtml(formatDateTimeWithSeconds(startedAt))}</strong></div><div><span>End time</span><strong>${escapeHtml(formatDateTimeWithSeconds(endedAt))}</strong></div><div><span>Elapsed start</span><strong>${escapeHtml(formatTimestampWithElapsed(startedAt, sessionStart))}</strong></div><div><span>Duration</span><strong>${escapeHtml(formatLatency(getTraceDurationMs(trace)))}</strong></div><div><span>Status</span><strong>${escapeHtml(trace.status || "unknown")}</strong></div><div><span>Turn</span><strong>${escapeHtml(trace.turn_id || "Session")}</strong></div></div><div class="trace-detail-attributes"><span>Attributes</span>${metadata}</div><div class="trace-detail-attributes"><span>Raw payload</span>${rawPayload}</div>`;
   elements.sessionTraceList.closest(".trace-workspace")?.classList.add("has-trace-detail");
   elements.sessionTraceDetail.hidden = false;
   elements.sessionTraceDetail.querySelector("[data-close-trace-detail]").addEventListener("click", () => {
@@ -879,6 +962,7 @@ async function openCallSetup(agentId) {
   try {
     const response = await callWorkspaceApi("test-cases");
     if (modal.hidden || modal.dataset.agentId !== agentId) return;
+    pageState.testCustomers = response.customers ?? [];
     select.innerHTML += (response.customers ?? []).map(customer => `<option value="${escapeHtml(customer.id)}">${escapeHtml(customer.full_name)}</option>`).join("");
   } catch (failure) {
     showError(error, "Customer accounts could not be loaded. You can still call without an account.");
@@ -893,6 +977,127 @@ document.querySelector("#confirm-call-setup").addEventListener("click", () => {
   void startBrowserSession(modal.dataset.agentId, {call_direction: "user_calls_agent", ...(customerId ? {customer_id: customerId} : {})});
 });
 
+/** Keep the fictional customer's verification answers visible inside the call. */
+function renderCallCustomer(customerId) {
+  const customer = pageState.testCustomers.find((candidate) => candidate.id === customerId);
+  elements.callCustomerDetails.hidden = !customerId;
+  if (!customer) {
+    elements.callCustomerDetails.textContent = customerId ? "Test customer information is unavailable." : "";
+    return;
+  }
+  const amount = (value) => new Intl.NumberFormat("en-US", { style: "currency", currency: customer.currency || "USD" }).format((value ?? 0) / 100);
+  const primary = [["Date of birth", customer.date_of_birth], ["Postal code", customer.postal_code], ["Current debt", amount(customer.balance_cents)], ["Payment due", customer.payment_due_date], ["Collection stage", `${customer.collection_stage ?? "Unknown"} · ${customer.days_overdue ?? "—"} days overdue`], ["Callback number", customer.phone_e164 || "Not configured"]];
+  const extra = [["Customer ID", customer.id], ["Account reference", customer.account_reference], ["Interest included", amount(customer.late_interest_cents)], ["Credit reporting", customer.credit_reporting_status], ["Timezone", customer.timezone]];
+  const facts = (fields) => `<dl class="test-facts">${fields.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "—")}</dd></div>`).join("")}</dl>`;
+  elements.callCustomerDetails.innerHTML = `<div class="call-customer-heading"><h3>${escapeHtml(customer.full_name)}</h3><span>Fictional test customer</span></div>${facts(primary)}<details><summary>More customer information</summary>${facts(extra)}</details>`;
+}
+
+// Intl formatter construction is expensive; share it across live caption updates.
+let callTranscriptTimeFormatter;
+
+/** Turns here are chronological speaker changes, independent of backend turn IDs. */
+function renderCallTranscript(capture) {
+  if (pageState.callTranscript !== capture) return;
+  const viewport = elements.callTranscript;
+  const follow = !viewport.childElementCount || viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+  const turns = [];
+  for (const message of capture.messages.values()) {
+    if (!message.text.trim()) continue;
+    let turn = turns[turns.length - 1];
+    if (!turn || turn.speaker !== message.speaker) {
+      turn = { speaker: message.speaker, messages: [] };
+      turns.push(turn);
+    }
+    turn.messages.push(message);
+  }
+  viewport.innerHTML = turns.length ? turns.map((turn, index) => {
+    const partial = turn.messages.some((message) => !message.final);
+    const status = partial ? (capture.ended || turn.messages.some((message) => message.incomplete) ? "Partial transcript" : turn.speaker === "user" ? "Recognizing…" : "Speaking…") : "";
+    callTranscriptTimeFormatter ??= new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const time = callTranscriptTimeFormatter.format(turn.messages[0].receivedAt);
+    return `<article class="call-turn ${turn.speaker}"><header><strong>Turn ${index + 1} · ${turn.speaker === "user" ? "You" : "Agent"}</strong><time>${escapeHtml(time)}</time><span>${status}</span></header>${turn.messages.map((message) => `<p${message.final ? "" : ' class="partial"'}>${escapeHtml(message.text)}</p>`).join("")}</article>`;
+  }).join("") : '<p class="session-empty">Your conversation will appear here as you speak.</p>';
+  elements.callTranscriptStatus.textContent = capture.ended ? `${turns.length} turns · Call ended` : turns.length ? `${turns.length} turns · Live` : "Waiting for speech";
+  if (follow) viewport.scrollTop = viewport.scrollHeight;
+}
+
+/** A final stream supersedes interim revisions; late interim chunks cannot revert it. */
+async function receiveCallText(capture, reader, participantInfo) {
+  const attributes = reader.info.attributes ?? {};
+  const identity = participantInfo.identity;
+  const segmentId = attributes["lk.segment_id"] || reader.info.id;
+  const key = JSON.stringify([identity, segmentId]);
+  const isFinal = () => [true, "true"].includes(reader.info.attributes?.["lk.transcription_final"]);
+  const existing = capture.messages.get(key);
+  const token = ++capture.streamSequence;
+  const accepted = !((existing?.final || existing?.finalStream) && !isFinal());
+  if (accepted && pageState.callTranscript === capture) {
+    capture.messages.set(key, {
+      ...existing, text: existing?.text ?? "", final: false, finalStream: isFinal(), source: "stream", token,
+      speaker: identity === capture.room.localParticipant.identity ? "user" : "agent",
+      receivedAt: existing?.receivedAt ?? new Date(), incomplete: false,
+    });
+  }
+  let text = "";
+  const update = (done, incomplete = false) => {
+    const message = capture.messages.get(key);
+    if (!accepted || pageState.callTranscript !== capture || message?.token !== token) return false;
+    if (text || !incomplete) message.text = text;
+    message.final = done && isFinal();
+    message.incomplete = incomplete;
+    renderCallTranscript(capture);
+    return true;
+  };
+  try {
+    // SDK 2.22.3 yields text deltas within each stream. A new stream for the
+    // same segment is a replacement hypothesis, not another appended message.
+    for await (const chunk of reader) {
+      text += chunk;
+      update(false);
+    }
+    update(true);
+  } catch (error) {
+    if (update(false, true)) {
+      showError(elements.callError, "A live caption stream was interrupted. Received text is kept; some words may be missing.");
+    }
+  }
+}
+
+/** Fallback for clients without text streams; never subscribe to both feeds. */
+function receiveLegacyCallText(capture, segments, participant) {
+  if (pageState.callTranscript !== capture || !participant?.identity) return;
+  for (const segment of segments) {
+    const key = JSON.stringify([participant.identity, segment.id]);
+    const previous = capture.messages.get(key);
+    if (previous?.source === "stream" || (previous?.final && !segment.final)) continue;
+    capture.messages.set(key, {
+      text: segment.text, final: segment.final, source: "legacy",
+      speaker: participant.identity === capture.room.localParticipant.identity ? "user" : "agent",
+      receivedAt: previous?.receivedAt ?? new Date(),
+    });
+  }
+  renderCallTranscript(capture);
+}
+
+/** Retain operation identity across an uncertain response and page reload. */
+function pendingCallRequest(body) {
+  const fingerprint = JSON.stringify({ agent_id: body.agent_id, source: body.source ?? "user_started",
+    customer_id: body.customer_id ?? null, call_direction: body.call_direction ?? "user_calls_agent" });
+  if (!pageState.pendingCallRequests) {
+    try { pageState.pendingCallRequests = JSON.parse(sessionStorage.getItem("agent-studio-pending-calls") ?? "{}"); }
+    catch { pageState.pendingCallRequests = {}; }
+    if (!pageState.pendingCallRequests || typeof pageState.pendingCallRequests !== "object" || Array.isArray(pageState.pendingCallRequests)) pageState.pendingCallRequests = {};
+  }
+  if (!pageState.pendingCallRequests[fingerprint]) pageState.pendingCallRequests[fingerprint] = crypto.randomUUID();
+  try { sessionStorage.setItem("agent-studio-pending-calls", JSON.stringify(pageState.pendingCallRequests)); } catch { /* Keep identity in memory. */ }
+  return { fingerprint, key: pageState.pendingCallRequests[fingerprint] };
+}
+
+function clearPendingCallRequest(fingerprint) {
+  delete pageState.pendingCallRequests[fingerprint];
+  try { sessionStorage.setItem("agent-studio-pending-calls", JSON.stringify(pageState.pendingCallRequests)); } catch { /* Keep identity in memory. */ }
+}
+
 /** Start a browser microphone session for one available agent. */
 async function startBrowserSession(agentId, options = {}) {
   if (pageState.liveSession || pageState.callStarting) return;
@@ -903,6 +1108,7 @@ async function startBrowserSession(agentId, options = {}) {
     return;
   }
 
+  const authGeneration = pageState.authGeneration ?? 0;
   pageState.callStarting = true;
   refreshTestButton();
   clearError(elements.callError);
@@ -912,13 +1118,32 @@ async function startBrowserSession(agentId, options = {}) {
   elements.callStatus.className = "badge sleeping";
   elements.muteCallButton.disabled = true;
   elements.endCallButton.disabled = true;
+  elements.muteCallButton.textContent = "Mute microphone";
+  elements.endCallButton.textContent = "End call";
+  elements.callSessionLink.hidden = true;
+  pageState.callTranscript = null;
+  elements.callTranscript.innerHTML = '<p class="session-empty">Your conversation will appear here as you speak.</p>';
+  elements.callTranscriptStatus.textContent = "Waiting for speech";
+  renderCallCustomer(options.customer_id);
 
+  const requestBody = { agent_id: agent.id, source: "user_started", ...options };
+  const operation = pendingCallRequest(requestBody);
   try {
     const response = await callWorkspaceApi("livekit-session", "", {
       method: "POST",
-      body: JSON.stringify({ agent_id: agent.id, source: "user_started", ...options }),
+      headers: { "Idempotency-Key": operation.key },
+      body: JSON.stringify(requestBody),
     });
+    if (authGeneration !== (pageState.authGeneration ?? 0)) throw new Error("Signed out while starting the call.");
+    if (response.code === "SESSION_START_PENDING") {
+      const error = new Error(response.error ?? "The call start is being confirmed. Retry to check the same call.");
+      error.code = response.code;
+      throw error;
+    }
     if (options.customer_id) {
+      if (pageState.lastTestSessionId !== response.session_id) pageState.manualReviewId = null;
+      pageState.lastTestSessionId = response.session_id;
+      document.querySelector("#record-validation-form").hidden = true;
       const link = document.querySelector("#test-last-session");
       link.hidden = false;
       link.href = `#session/${response.session_id}`;
@@ -926,6 +1151,25 @@ async function startBrowserSession(agentId, options = {}) {
     }
     const room = new window.LivekitClient.Room({ adaptiveStream: true, dynacast: true });
     pageState.liveSession = { room, sessionId: response.session_id, muted: false };
+    clearPendingCallRequest(operation.fingerprint);
+    const capture = { room, messages: new Map(), streamSequence: 0, ended: false };
+    pageState.callTranscript = capture;
+    // Register before connecting so the outbound greeting is captured too.
+    // RoomIO publishes both transports with independent segment IDs. Selecting
+    // one transport avoids duplicate captions without deleting repeated speech.
+    if (typeof room.registerTextStreamHandler === "function") {
+      room.registerTextStreamHandler("lk.transcription", (reader, participantInfo) => {
+        void receiveCallText(capture, reader, participantInfo);
+      });
+    } else {
+      room.on(window.LivekitClient.RoomEvent.TranscriptionReceived, (segments, participant) => receiveLegacyCallText(capture, segments, participant));
+    }
+    elements.callSessionLink.href = `#session/${response.session_id}`;
+    elements.callSessionLink.onclick = (event) => {
+      event.preventDefault();
+      elements.callModal.hidden = true;
+      void loadSessionDetails(response.session_id);
+    };
 
     room.on(window.LivekitClient.RoomEvent.TrackSubscribed, (track) => {
       if (track.kind !== window.LivekitClient.Track.Kind.Audio) return;
@@ -939,14 +1183,16 @@ async function startBrowserSession(agentId, options = {}) {
     });
 
     await room.connect(response.server_url, response.participant_token);
+    if (authGeneration !== (pageState.authGeneration ?? 0)) { await room.disconnect(); return; }
     await room.localParticipant.setMicrophoneEnabled(true);
-    await updateBrowserSessionStatus(response.session_id, "active");
+    if (authGeneration !== (pageState.authGeneration ?? 0)) { await room.localParticipant.setMicrophoneEnabled(false); await room.disconnect(); return; }
     elements.callAgentName.textContent = `Connected to ${agent.name}. ${options.call_direction === "agent_calls_user" ? "The agent will speak first." : "You can speak first."}`;
     elements.callStatus.textContent = "Active";
     elements.callStatus.className = "badge active";
     elements.muteCallButton.disabled = false;
     await room.startAudio().catch(() => undefined);
-    await loadDashboard();
+    // The room is ready. Dashboard networking must not keep call controls locked.
+    void loadDashboard();
   } catch (error) {
     const sessionId = pageState.liveSession?.sessionId;
     if (sessionId) await updateBrowserSessionStatus(sessionId, "failed").catch(() => undefined);
@@ -954,9 +1200,18 @@ async function startBrowserSession(agentId, options = {}) {
     pageState.liveSession = null;
     if (failedRoom) await failedRoom.disconnect().catch(() => undefined);
     elements.remoteAudioContainer.replaceChildren();
+    if (authGeneration !== (pageState.authGeneration ?? 0)) return;
     showError(elements.callError, error.message ?? "Could not start the browser session.");
-    elements.callStatus.textContent = "Failed";
-    elements.callStatus.className = "badge offline";
+    if (error.code === "SESSION_CLOSED") clearPendingCallRequest(operation.fingerprint);
+    const pending = error.code === "SESSION_START_PENDING" || !pageState.liveSession && !sessionId && !error.status;
+    elements.callStatus.textContent = pending ? "Start unconfirmed" : "Failed";
+    elements.callStatus.className = pending ? "badge sleeping" : "badge offline";
+    if (pageState.callTranscript) {
+      pageState.callTranscript.ended = true;
+      renderCallTranscript(pageState.callTranscript);
+    }
+    elements.endCallButton.textContent = "Close";
+    elements.muteCallButton.disabled = true;
   } finally {
     pageState.callStarting = false;
     elements.endCallButton.disabled = false;
@@ -972,13 +1227,52 @@ async function finishBrowserSession(status = "completed", disconnectRoom = true)
     return;
   }
   pageState.liveSession = null;
+  pageState.callTranscript.ended = true;
+  renderCallTranscript(pageState.callTranscript);
+  elements.callStatus.textContent = "Ended";
+  elements.callStatus.className = "badge sleeping";
+  elements.endCallButton.textContent = "Close";
+  elements.callSessionLink.hidden = false;
   refreshTestButton();
-  if (disconnectRoom) await liveSession.room.disconnect();
+  if (disconnectRoom) await liveSession.room.disconnect().catch(() => undefined);
   await updateBrowserSessionStatus(liveSession.sessionId, status).catch(() => undefined);
+  if (pageState.lastTestSessionId === liveSession.sessionId) document.querySelector("#record-validation-form").hidden = false;
   elements.remoteAudioContainer.replaceChildren();
   elements.muteCallButton.disabled = true;
+  await Promise.all([loadAgents(), loadDashboard()]).catch(() => undefined);
+}
+
+/** Authentication ends local audio immediately, independently of API availability. */
+async function releaseAuthenticatedCall() {
+  pageState.authGeneration = (pageState.authGeneration ?? 0) + 1;
+  const live = pageState.liveSession;
+  pageState.liveSession = null;
+  pageState.callTranscript = null;
+  pageState.lastTestSessionId = null;
+  pageState.manualReviewId = null;
+  pageState.editorRequest = (pageState.editorRequest ?? 0) + 1;
+  setAgentEditorReady(false);
+  savedAgentVoicePicker?.stop();
+  pageState.selectedValidationId = null;
+  pageState.validationRuns = [];
+  pageState.sessionHistory = [];
+  pageState.selectedSessionId = null;
+  pageState.historyRequest = (pageState.historyRequest ?? 0) + 1;
+  pageState.validationRequest = (pageState.validationRequest ?? 0) + 1;
+  elements.validationHistory.replaceChildren();
+  elements.validationDetail.replaceChildren();
+  document.querySelector("#record-validation-form").hidden = true;
   elements.callModal.hidden = true;
-  await Promise.all([loadAgents(), loadDashboard()]);
+  elements.modal.hidden = true;
+  elements.toolModal.hidden = true;
+  elements.callTranscript.replaceChildren();
+  elements.callCustomerDetails.replaceChildren();
+  elements.remoteAudioContainer.replaceChildren();
+  if (live) {
+    // Start disconnect synchronously; SDK disconnect stops every local media track.
+    const disconnected = live.room.disconnect();
+    await Promise.resolve(disconnected).catch(() => undefined);
+  }
 }
 
 /** Toggle the local microphone while keeping the LiveKit room connected. */
@@ -990,16 +1284,34 @@ async function toggleCallMute() {
 }
 
 /** Open a blank form for a new agent. */
-function openCreateModal() {
+async function openCreateModal() {
   pageState.editingAgentId = null;
+  const editorRequest = beginAgentEditor();
   elements.form.reset();
   elements.agentId.value = "";
   elements.language.value = "en";
-  elements.ttsModel.value = "inworld/inworld-tts-2";
   elements.modalEyebrow.textContent = "NEW AGENT";
   elements.modalTitle.textContent = "Create an agent";
   showModal();
-  void loadAgentToolSelection();
+  try {
+    await agentVoicePicker().load();
+    if (editorRequest !== pageState.editorRequest) return;
+    await loadAgentToolSelection();
+    if (editorRequest === pageState.editorRequest) setAgentEditorReady(true);
+  } catch (error) {
+    if (editorRequest === pageState.editorRequest) showError(elements.formError, error.message);
+  }
+}
+
+let savedAgentVoicePicker = null;
+function agentVoicePicker() {
+  if (!savedAgentVoicePicker) savedAgentVoicePicker = new window.HostedVoicePicker({
+    model: elements.ttsModel, voice: elements.voice,
+    audio: document.querySelector("#agent-voice-audio"),
+    details: document.querySelector("#agent-voice-details"),
+    status: document.querySelector("#agent-voice-status"),
+  });
+  return savedAgentVoicePicker;
 }
 
 /** Populate the form with one existing agent for editing. */
@@ -1007,21 +1319,38 @@ async function openEditModal(agentId) {
   const agent = pageState.agents.find((candidate) => candidate.id === agentId);
   if (!agent) return;
   pageState.editingAgentId = agent.id;
+  const editorRequest = beginAgentEditor();
   elements.agentId.value = agent.id;
   elements.name.value = agent.name;
   elements.description.value = agent.description;
   elements.instructions.value = agent.instructions;
   elements.model.value = agent.model;
   elements.language.value = agent.language || "en";
-  elements.ttsModel.value = agent.tts_model || "inworld/inworld-tts-2";
   elements.modalEyebrow.textContent = "EDIT AGENT";
   elements.modalTitle.textContent = "Edit agent";
   showModal();
   try {
-    await loadAgentToolSelection(agent.id);
+    await agentVoicePicker().load(agent.tts_model || "inworld/inworld-tts-2", agent.voice);
+    if (editorRequest !== pageState.editorRequest) return;
+    const tools = await loadTools(agent.id);
+    if (editorRequest !== pageState.editorRequest) return;
+    renderAgentToolSelection(tools);
+    setAgentEditorReady(true);
   } catch (error) {
-    showError(elements.formError, error.message);
+    if (editorRequest === pageState.editorRequest) showError(elements.formError, error.message);
   }
+}
+
+function setAgentEditorReady(ready) {
+  pageState.agentEditorReady = ready;
+  elements.agentSaveButton.disabled = !ready || Boolean(pageState.agentSaving);
+}
+
+function beginAgentEditor() {
+  pageState.editorRequest = (pageState.editorRequest ?? 0) + 1;
+  setAgentEditorReady(false);
+  elements.agentToolSelection.replaceChildren();
+  return pageState.editorRequest;
 }
 
 /** Display the dialog and focus the first meaningful field. */
@@ -1033,6 +1362,9 @@ function showModal() {
 
 /** Close the dialog and clear stale validation feedback. */
 function closeModal() {
+  pageState.editorRequest = (pageState.editorRequest ?? 0) + 1;
+  setAgentEditorReady(false);
+  savedAgentVoicePicker?.stop();
   elements.modal.hidden = true;
   clearError(elements.formError);
 }
@@ -1040,9 +1372,14 @@ function closeModal() {
 /** Validate and save either a new agent or the edited agent through the API. */
 async function saveAgent(event) {
   event.preventDefault();
+  if (!pageState.agentEditorReady || pageState.agentSaving) return;
   clearError(elements.formError);
   const name = elements.name.value.trim();
   const instructions = elements.instructions.value.trim();
+  if (elements.voice.disabled || !elements.voice.value) {
+    showError(elements.formError, "Choose a voice after the catalog has loaded.");
+    return;
+  }
   if (!name || !instructions) {
     showError(elements.formError, "Add an agent name and instructions before saving.");
     return;
@@ -1055,28 +1392,33 @@ async function saveAgent(event) {
     model: elements.model.value,
     language: elements.language.value,
     tts_model: elements.ttsModel.value,
+    voice: elements.voice.value,
+    assignments: selectedAgentToolAssignments(),
   };
+  const editorRequest = pageState.editorRequest;
   const isEditing = Boolean(pageState.editingAgentId);
   const requestPath = isEditing ? `?id=${encodeURIComponent(pageState.editingAgentId)}` : "";
+  pageState.agentSaving = true;
+  setAgentEditorReady(true);
   try {
     const response = await callAgentsApi(requestPath, {
       method: isEditing ? "PATCH" : "POST",
       body: JSON.stringify(agentDetails),
     });
-    const savedAgentId = response.agent?.id ?? pageState.editingAgentId;
-    if (savedAgentId) {
-      await callWorkspaceApi("tools", `?agent_id=${encodeURIComponent(savedAgentId)}`, {
-        method: "PUT",
-        body: JSON.stringify({ assignments: selectedAgentToolAssignments() }),
-      });
-    }
+    if (editorRequest !== pageState.editorRequest) return;
+    // Preserve identity even if a later refresh fails, so a retry edits this row.
+    pageState.editingAgentId = response.agent?.id ?? pageState.editingAgentId;
     await loadAgents();
     await loadDashboard();
     await loadTools();
+    if (editorRequest !== pageState.editorRequest) return;
     closeModal();
     if (!elements.testsPage.hidden) await loadTestCases();
   } catch (error) {
     showError(elements.formError, error.message);
+  } finally {
+    pageState.agentSaving = false;
+    setAgentEditorReady(pageState.agentEditorReady);
   }
 }
 
@@ -1255,6 +1597,7 @@ elements.seeAllSessionsButton.addEventListener("click", async () => {
 });
 elements.backToDashboardButton.addEventListener("click", () => showPage("dashboard-page"));
 elements.backToSessionsButton.addEventListener("click", () => showPage("sessions-page"));
+elements.sessionLoadMore.addEventListener("click", () => void loadAllSessions(pageState.historyAgentId, { append: true }));
 document.querySelector("#back-to-agents-button").addEventListener("click", () => showPage("agents-page"));
 document.querySelector("#agent-see-all-sessions-button").addEventListener("click", async () => {
   showPage("sessions-page");
@@ -1309,6 +1652,7 @@ function refreshTestButton() {
 }
 
 async function loadTestCases() {
+  void loadValidationHistory();
   pageState.testsLoading = true;
   refreshTestButton();
   clearError(elements.testsError);
@@ -1367,3 +1711,88 @@ async function renderTestAgent() {
   }
   refreshTestButton();
 }
+
+
+/** Review persisted validation runs independently from the interactive call controls. */
+async function loadValidationHistory({ append = false } = {}) {
+  if (append && pageState.validationLoading) return;
+  const request = (pageState.validationRequest ?? 0) + 1;
+  pageState.validationRequest = request;
+  pageState.validationLoading = true;
+  clearError(elements.validationError);
+  elements.validationLoadMore.disabled = true;
+  try {
+    const query = new URLSearchParams({limit:"20"});
+    if (append && pageState.validationCursor) query.set("cursor",pageState.validationCursor);
+    const response = await callWorkspaceApi("test-runs",`?${query}`);
+    if (request !== pageState.validationRequest) return;
+    pageState.validationRuns = [...(append ? pageState.validationRuns ?? [] : []), ...(response.runs ?? [])];
+    pageState.validationCursor = response.next_cursor ?? null;
+    elements.validationLoadMore.hidden = !pageState.validationCursor;
+    renderValidationHistory();
+  } catch (error) {
+    if (request === pageState.validationRequest) showError(elements.validationError,error.message);
+  } finally {
+    if (request === pageState.validationRequest) {
+      pageState.validationLoading = false;
+      elements.validationLoadMore.disabled = false;
+    }
+  }
+}
+
+function validationStatus(status) {
+  return ({not_run:"Not run",inconclusive:"Inconclusive",passed:"Passed",failed:"Failed",running:"Running",pending:"Pending",error:"Error"})[status] ?? String(status ?? "Unknown").replaceAll("_"," ");
+}
+
+function renderValidationHistory() {
+  const runs = pageState.validationRuns ?? [];
+  elements.validationHistory.innerHTML = runs.length ? runs.map(run => `<button class="session-row" type="button" data-validation-id="${escapeHtml(run.id)}"><span class="session-row-content"><span class="session-row-title">${escapeHtml(run.scenario_name || run.scenario_id || "Unnamed scenario")}</span><span class="session-row-meta">${escapeHtml(run.execution_type)} · ${escapeHtml(formatDateTime(run.started_at || run.created_at))} · config ${escapeHtml(run.configuration_version ?? "unversioned")} · policy ${escapeHtml(run.policy_version ?? "unversioned")}</span></span><span class="session-row-status">${escapeHtml(validationStatus(run.status))}</span></button>`).join("") : '<p class="session-empty">No validation results have been recorded. Run the scenario suite or review a completed audio test.</p>';
+  elements.validationHistory.querySelectorAll("[data-validation-id]").forEach(button => button.addEventListener("click",() => void loadValidationDetail(button.dataset.validationId)));
+}
+
+async function loadValidationDetail(id) {
+  pageState.selectedValidationId = id;
+  clearError(elements.validationError);
+  try {
+    const {run} = await callWorkspaceApi("test-runs",`?id=${encodeURIComponent(id)}`);
+    if (pageState.selectedValidationId !== id) return;
+    if (!run) throw new Error("Validation result not found.");
+    const payload = value => escapeHtml(typeof value === "string" ? value : JSON.stringify(value ?? null,null,2));
+    const sections = [["Expected outcome",run.expected_outcome],["Actual outcome",run.actual_outcome],["Assertions",run.assertions],["Latency",run.latency],["Synthetic customer",run.customer_snapshot],["Agent configuration",run.configuration_snapshot],["Transcript",run.transcript],["Provenance",run.provenance],["Artifact",run.artifact_path],["Error / notes",run.error_message || run.notes]];
+    elements.validationDetail.innerHTML = `<h3>${escapeHtml(run.scenario_name || run.scenario_id || "Validation result")}</h3><p>${escapeHtml(validationStatus(run.status))} · ${escapeHtml(run.execution_type)} · configuration ${escapeHtml(run.configuration_version ?? "unversioned")} · policy ${escapeHtml(run.policy_version ?? "unversioned")}</p><p>Started ${escapeHtml(formatDateTime(run.started_at))} · Completed ${escapeHtml(formatDateTime(run.completed_at))}</p>${run.session_id ? '<button type="button" class="text-button" data-validation-session>Open saved session</button>' : ""}${sections.map(([title,value]) => `<details open><summary>${title}</summary><pre>${payload(value)}</pre></details>`).join("")}`;
+    elements.validationDetail.hidden = false;
+    elements.validationDetail.querySelector("[data-validation-session]")?.addEventListener("click",() => void loadSessionDetails(run.session_id));
+  } catch (error) {
+    if (pageState.selectedValidationId === id) showError(elements.validationError,error.message);
+  }
+}
+
+async function recordAudioValidation(event) {
+  event.preventDefault();
+  if (!pageState.lastTestSessionId || pageState.liveSession || pageState.recordingValidation) return;
+  const scenarioName = document.querySelector("#validation-scenario").value.trim();
+  const expected = document.querySelector("#validation-expected").value.trim();
+  if (!scenarioName || !expected) return;
+  pageState.recordingValidation = true;
+  pageState.manualReviewId ??= crypto.randomUUID();
+  const button = document.querySelector("#record-validation-button");
+  const status = document.querySelector("#record-validation-status");
+  button.disabled = true;
+  status.textContent = "Saving review…";
+  try {
+    await callWorkspaceApi("test-runs","",{method:"POST",body:JSON.stringify({
+      id:pageState.manualReviewId,execution_type:"manual_audio",scenario_id:`manual-audio-${scenarioName.toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,80)}`,scenario_name:scenarioName,session_id:pageState.lastTestSessionId,
+      expected_outcome:{description:expected},status:document.querySelector("#validation-verdict").value,
+      notes:document.querySelector("#validation-notes").value.trim(),
+    })});
+    pageState.manualReviewId = null;
+    status.textContent = "Validation review saved.";
+    document.querySelector("#record-validation-form").hidden = true;
+    await loadValidationHistory();
+  } catch (error) { status.textContent = error.message; }
+  finally { pageState.recordingValidation = false;button.disabled = false; }
+}
+
+elements.validationLoadMore.addEventListener("click",() => void loadValidationHistory({append:true}));
+document.querySelector("#validation-refresh").addEventListener("click",() => void loadValidationHistory());
+document.querySelector("#record-validation-form").addEventListener("submit",recordAudioValidation);

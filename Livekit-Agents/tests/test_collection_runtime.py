@@ -46,7 +46,8 @@ def call(name, **arguments):
 class Store:
     """RPC transport fixture: executes production transitions through CollectionBackend."""
 
-    def __init__(self):
+    def __init__(self, customer=None):
+        self.customer = CUSTOMER if customer is None else customer
         self.state = {}
         self.version = 0
         self.results = {}
@@ -63,7 +64,9 @@ class Store:
                 json={
                     "state": deepcopy(self.state),
                     "version": self.version,
-                    "customer": dict(CUSTOMER, updated_at="2026-09-27T00:00:00+00:00"),
+                    "customer": dict(
+                        self.customer, updated_at="2026-09-27T00:00:00+00:00"
+                    ),
                     "session_status": "active",
                     "now": "2026-09-27T12:00:00+00:00",
                     "result": self.results.get(rid),
@@ -75,7 +78,12 @@ class Store:
             return httpx.Response(200, json={"conflict": True})
         self.state, self.version = body["p_state"], self.version + 1
         self.results[rid] = body["p_result"]
-        self.audits.append(body["p_arguments"])
+        # SQL fingerprints the arguments but redacts identity answers in its audit.
+        self.audits.append(
+            {"redacted": True}
+            if body["p_result"]["tool_name"] == "verify_identity"
+            else body["p_arguments"]
+        )
         if body["p_effect"]:
             self.effects.append(body["p_effect"])
         if self.lose_response:
@@ -105,7 +113,7 @@ async def test_lost_write_response_recovers_without_counting_verification_twice(
     )
     assert result["code"] == "IDENTITY_NOT_VERIFIED"
     assert store.state["attempts"] == 1
-    assert store.audits == [{}]
+    assert store.audits == [{"redacted": True}]
     await backend.close()
 
 
@@ -206,6 +214,43 @@ async def test_same_turn_cannot_commit():
 
 
 # Optional paid-network test: verifies ordinary-language interpretation, not fixtures.
+
+
+async def test_sdk_callback_regenerated_tool_ids_share_user_action_then_new_user_is_distinct():
+    store = Store(customer=dict(CUSTOMER, phone_e164="+905551234567"))
+    backend = store.backend()
+    arguments = {"callback_at": "2026-09-28T14:00:00+03:00"}
+    model = ScriptedLLM(
+        [
+            call("request_callback", **arguments),
+            call("request_callback", **arguments),
+            "The callback request is saved.",
+            call("request_callback", **arguments),
+            "The additional callback request is saved.",
+        ]
+    )
+    try:
+        async with AgentSession(llm=model) as session:
+            await session.start(
+                ConfiguredAssistant(
+                    backend=backend,
+                    enabled_tools={"request_callback"},
+                    instructions="Record requested callbacks using the callback tool.",
+                )
+            )
+            await session.run(user_input="Please call me tomorrow at two.")
+            assert len(store.effects) == 1
+            first_operation = store.effects[0]["operation_id"]
+            first_results = list(store.results.values())
+            assert len(first_results) == 2
+            assert first_results[0]["data"] == first_results[1]["data"]
+            await session.run(
+                user_input="Please also record a second callback at that time."
+            )
+            assert len(store.effects) == 2
+            assert store.effects[1]["operation_id"] != first_operation
+    finally:
+        await backend.close()
 
 
 @pytest.mark.skipif(

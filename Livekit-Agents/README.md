@@ -82,15 +82,16 @@ state persistence, and failure handling.
 uv run pytest
 ```
 
-Optional default-assistant conversation simulations:
+Free scripted collection conversations:
 
 ```console
-uv run --env-file .env.local lk agent simulate --scenarios scenarios.yaml
+uv run python src/evaluation.py --mode scripted
 ```
 
-Simulations use LiveKit Cloud and may incur inference charges. They do not cover
-the complete dashboard or customer workflow. Additional collection validation
-is described in [COLLECTION_TOOLS.md](COLLECTION_TOOLS.md#validation).
+Scripted conversations require no inference. Their artifacts record exact effects
+and complete fictional identities; they test SDK mechanics, not language meaning.
+For opt-in real-model/audio simulations, SQL integration tests and retained
+reviewer history, see [the validation guide](../docs/VALIDATION.md).
 
 ## Deployment notes
 

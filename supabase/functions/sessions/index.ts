@@ -1,4 +1,5 @@
 import { withSupabase } from "npm:@supabase/server"
+import { decodeCursor, pageSessions } from "./pagination.mjs"
 
 /** Calculate a percentile from the completed turn latency values. */
 function percentile(values: number[], percentileValue: number): number | null {
@@ -114,16 +115,22 @@ export default {
     const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? "50")
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50
 
+    let cursor
+    try { cursor = decodeCursor(requestUrl.searchParams.get("cursor")) }
+    catch { return Response.json({ error: "Invalid history cursor." }, { status: 400 }) }
+
     let sessionQuery = context.supabase
       .from("sessions")
       .select("id, agent_id, room_name, source, status, started_at, ended_at, created_at, agents(id, name)")
       .order("created_at", { ascending: false })
-      .limit(limit)
+      .order("id", { ascending: false })
+      .limit(limit + 1)
 
     if (agentId) sessionQuery = sessionQuery.eq("agent_id", agentId)
+    if (cursor) sessionQuery = sessionQuery.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)
 
     const { data, error } = await sessionQuery
     if (error) return Response.json({ error: error.message }, { status: 500 })
-    return Response.json({ sessions: data ?? [] })
+    return Response.json(pageSessions(data ?? [], limit))
   }),
 }

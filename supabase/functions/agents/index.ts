@@ -1,4 +1,6 @@
 import { withSupabase } from "npm:@supabase/server"
+import { validateAssignments } from "../tools/validation.mjs"
+import { supportedTtsModels, validateVoiceConfiguration } from "./voices.mjs"
 
 type AgentUpdate = {
   name?: string
@@ -19,6 +21,7 @@ type AgentCreate = {
   voice?: string | null
   language?: string
   tts_model?: string
+  assignments?: unknown
 }
 
 const editableAgentFields = [
@@ -43,7 +46,6 @@ const creatableAgentFields = [
 ] as const
 
 const supportedAgentLanguages = new Set(["en", "tr"])
-const supportedTtsModels = new Set(["cartesia/sonic-3", "inworld/inworld-tts-2"])
 
 /** Return a consistent JSON error response for validation and database failures. */
 function errorResponse(message: string, status: number): Response {
@@ -202,15 +204,16 @@ export default {
       const agentFields = pickCreatableAgentFields(requestBody as Record<string, unknown>)
       const validationError = validateNewAgentFields(agentFields)
       if (validationError) return errorResponse(validationError, 400)
+      const voiceError = validateVoiceConfiguration(agentFields)
+      if (voiceError) return errorResponse(voiceError, 400)
 
-      const { data, error } = await context.supabase
-        .from("agents")
-        .insert({
-          ...agentFields,
-          created_by: context.userClaims.id,
-        })
-        .select()
-        .single()
+      if (requestBody.assignments !== undefined) {
+        const assignmentError = validateAssignments(requestBody.assignments)
+        if (assignmentError) return errorResponse(assignmentError, 400)
+      }
+      const { data, error } = await context.supabase.rpc("save_agent", {
+        p_agent_id: null, p_fields: agentFields, p_assignments: requestBody.assignments ?? null,
+      })
 
       if (error) return errorResponse(error.message, 500)
       return Response.json({ agent: data }, { status: 201 })
@@ -229,16 +232,25 @@ export default {
       const agentFields = pickEditableAgentFields(requestBody)
       const validationError = validateAgentFields(agentFields)
       if (validationError) return errorResponse(validationError, 400)
-      if (Object.keys(agentFields).length === 0) {
-        return errorResponse("At least one agent field is required.", 400)
+      if (Object.keys(agentFields).length === 0 && requestBody.assignments === undefined) {
+        return errorResponse("At least one agent field or assignments is required.", 400)
       }
 
-      const { data, error } = await context.supabase
-        .from("agents")
-        .update(agentFields)
-        .eq("id", agentId)
-        .select()
-        .single()
+      if ("voice" in agentFields || "tts_model" in agentFields) {
+        const { data: current, error: currentError } = await context.supabase
+          .from("agents").select("tts_model, voice").eq("id", agentId).single()
+        if (currentError) return errorResponse(currentError.message, 404)
+        const voiceError = validateVoiceConfiguration({ ...current, ...agentFields })
+        if (voiceError) return errorResponse(voiceError, 400)
+      }
+
+      if (requestBody.assignments !== undefined) {
+        const assignmentError = validateAssignments(requestBody.assignments)
+        if (assignmentError) return errorResponse(assignmentError, 400)
+      }
+      const { data, error } = await context.supabase.rpc("save_agent", {
+        p_agent_id: agentId, p_fields: agentFields, p_assignments: requestBody.assignments ?? null,
+      })
 
       if (error) return errorResponse(error.message, 500)
       return Response.json({ agent: data })

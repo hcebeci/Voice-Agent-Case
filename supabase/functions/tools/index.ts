@@ -32,37 +32,11 @@ async function loadTools(supabaseClient: any, agentId: string | null) {
 
 /** Replace all tools assigned to one agent with the submitted set. */
 async function replaceAgentAssignments(supabaseClient: any, agentId: string, assignments: ToolRecord[]) {
-  const { data: agent, error: agentError } = await supabaseClient
-    .from("agents")
-    .select("id")
-    .eq("id", agentId)
-    .maybeSingle()
-  if (agentError) throw new Error(agentError.message)
-  if (!agent) return errorResponse("Agent not found.", 404)
-
-  const toolIds = assignments.map((assignment) => assignment.tool_id as string)
-  if (toolIds.length) {
-    const { data: enabledTools, error: toolsError } = await supabaseClient
-      .from("tools")
-      .select("id")
-      .in("id", toolIds)
-      .eq("is_enabled", true)
-    if (toolsError) throw new Error(toolsError.message)
-    if ((enabledTools ?? []).length !== toolIds.length) return errorResponse("Every assigned tool must exist and be enabled.", 400)
-  }
-
-  const { error: deleteError } = await supabaseClient.from("agent_tools").delete().eq("agent_id", agentId)
-  if (deleteError) throw new Error(deleteError.message)
-  if (assignments.length) {
-    const { error: insertError } = await supabaseClient.from("agent_tools").insert(
-      assignments.map((assignment) => ({
-        agent_id: agentId,
-        tool_id: assignment.tool_id,
-        configuration: assignment.configuration ?? {},
-      })),
-    )
-    if (insertError) throw new Error(insertError.message)
-  }
+  const { error } = await supabaseClient.rpc("replace_agent_assignments", {
+    p_agent_id: agentId, p_assignments: assignments,
+  })
+  if (error?.code === "P0002") return errorResponse("Agent not found.", 404)
+  if (error) return errorResponse("Could not save tool assignments. No assignments were changed.", 400)
   return Response.json({ tools: await loadTools(supabaseClient, agentId) })
 }
 

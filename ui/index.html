@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Create and manage voice agents." />
     <title>Agent Studio</title>
-    <link rel="stylesheet" href="styles.css?v=20260928-2" />
+    <link rel="stylesheet" href="styles.css?v=20261104-1" />
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -153,6 +153,24 @@
               <article class="dashboard-panel"><p class="eyebrow">AGENT CONFIGURATION</p><h2>What you are testing</h2><div id="test-agent-details" aria-live="polite"><p class="session-empty">Select an agent to preview its saved instructions and tools.</p></div></article>
             </div>
           </div>
+          <section class="dashboard-panel validation-panel" aria-labelledby="validation-heading">
+            <div class="panel-heading"><div><p class="eyebrow">SAVED EVIDENCE</p><h2 id="validation-heading">Validation history</h2></div><button id="validation-refresh" class="secondary-button" type="button">Refresh history</button></div>
+            <p class="field-help">Automated results and recorded human reviews. A browser call alone is not a passing validation. Open a result for the synthetic customer, configuration, assertions, transcript, and observed outcome.</p>
+            <p id="validation-error" class="form-error" role="alert" hidden></p>
+            <div id="validation-history" class="session-list" aria-live="polite"><p class="session-empty">Loading validation history…</p></div>
+            <button id="validation-load-more" class="secondary-button" type="button" hidden>Load older validations</button>
+            <article id="validation-detail" class="validation-detail" aria-live="polite" hidden></article>
+          </section>
+          <form id="record-validation-form" class="dashboard-panel validation-panel" hidden>
+            <p class="eyebrow">HUMAN REVIEW</p><h2>Record the last audio validation</h2>
+            <p class="field-help">Review the saved conversation before recording a verdict. The backend captures the saved synthetic session and actual effects.</p>
+            <label class="form-field"><span>Scenario name</span><input id="validation-scenario" required maxlength="160" placeholder="e.g. Verified customer rejects an offer" /></label>
+            <label class="form-field"><span>Expected outcome</span><textarea id="validation-expected" required rows="3" placeholder="Describe the behavior and state you expected."></textarea></label>
+            <label class="form-field"><span>Verdict</span><select id="validation-verdict"><option value="inconclusive">Inconclusive — needs more evidence</option><option value="passed">Passed</option><option value="failed">Failed</option></select></label>
+            <label class="form-field"><span>Review notes</span><textarea id="validation-notes" rows="3" placeholder="What happened, and what evidence supports the verdict?"></textarea></label>
+            <button id="record-validation-button" class="primary-button" type="submit">Save validation review</button>
+            <p id="record-validation-status" role="status"></p>
+          </form>
         </section>
 
         <section class="page-view" id="tools-page" hidden>
@@ -160,7 +178,7 @@
             <div>
               <p class="eyebrow">WORKSPACE / TOOLS</p>
               <h1>Shared tools</h1>
-              <p class="page-description">Define the backend capabilities agents may use. Execution is connected in the next Stage 3 slice.</p>
+              <p class="page-description">Define the backend capabilities agents may use. Assign supported implementations to agents and inspect their execution in saved sessions.</p>
             </div>
             <button class="primary-button" id="open-tool-create-button" type="button"><span aria-hidden="true">+</span> Create tool</button>
           </header>
@@ -185,6 +203,7 @@
           </header>
           <section class="dashboard-panel sessions-page-panel">
             <div id="all-session-list" class="session-list" aria-live="polite"></div>
+            <button id="session-load-more" class="secondary-button" type="button" hidden>Load older sessions</button>
           </section>
         </section>
 
@@ -277,15 +296,19 @@
         <div class="modal-header">
           <div>
             <p class="eyebrow">BROWSER SESSION</p>
-            <h2 id="call-title">Talk to your agent</h2>
+            <h2 id="call-title">Test conversation</h2>
           </div>
           <span class="badge sleeping" id="call-status">Connecting</span>
         </div>
         <p class="page-description" id="call-agent-name">Preparing the browser session…</p>
-        <div class="call-visualizer" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <section class="call-customer" id="call-customer-details" aria-label="Test customer information" hidden></section>
+        <div class="call-transcript-heading"><h3>Conversation turns</h3><span id="call-transcript-status">Waiting for speech</span></div>
+        <div class="call-transcript" id="call-transcript" role="log" aria-label="Live conversation transcript" aria-live="polite" aria-relevant="additions text"><p class="session-empty">Your conversation will appear here as you speak.</p></div>
+        <p class="call-caption-help">Live captions may change as speech is recognized.</p>
         <div id="remote-audio-container" class="remote-audio-container"></div>
         <p class="form-error" id="call-error" role="alert" hidden></p>
         <div class="modal-actions">
+          <a class="text-button" id="call-session-link" href="#sessions" hidden>View saved session</a>
           <button class="secondary-button" id="mute-call-button" type="button" disabled>Mute microphone</button>
           <button class="danger-button" id="end-call-button" type="button">End call</button>
         </div>
@@ -348,11 +371,18 @@
             <label class="form-field">
               <span>Text-to-speech model</span>
               <select id="agent-tts-model">
-                <option value="cartesia/sonic-3">Cartesia Sonic 3</option>
-                <option value="inworld/inworld-tts-2">Inworld TTS 2</option>
+                <option value="xai/tts-1">xAI</option>
               </select>
-              <small>Both options use LiveKit Inference. Inworld TTS 2 uses the default Ashley voice.</small>
+              <small>Multilingual voices through LiveKit Inference.</small>
             </label>
+            <label class="form-field">
+              <span>Voice</span>
+              <select id="agent-voice" required aria-describedby="agent-voice-details" disabled></select>
+              <small id="agent-voice-details"></small>
+            </label>
+            <audio id="agent-voice-audio" controls preload="none" hidden aria-label="Selected voice sample"></audio>
+            <p id="agent-voice-status" class="section-description" role="status"></p>
+            <p class="section-description">Only the voice ID is saved. Changes apply to new calls. <a href="voice-demo.html" target="_blank" rel="noopener">Try the voice demo</a>.</p>
           </div>
 
           <div class="form-section">
@@ -364,7 +394,7 @@
           <p class="form-error" id="form-error" role="alert" hidden></p>
           <div class="modal-actions">
             <button class="secondary-button" id="cancel-modal-button" type="button">Cancel</button>
-            <button class="primary-button" type="submit">Save agent</button>
+            <button class="primary-button" id="save-agent-button" type="submit" disabled>Save agent</button>
           </div>
         </form>
       </section>
@@ -383,7 +413,7 @@
           <input id="tool-id" type="hidden" />
           <label class="form-field"><span>Name <strong>*</strong></span><input id="tool-name" type="text" maxlength="80" placeholder="e.g. Current time" required /><small>Human-readable name shown in the tool library.</small></label>
           <label class="form-field"><span>Description</span><textarea id="tool-description" rows="3" maxlength="240" placeholder="What does this backend capability do?"></textarea></label>
-          <label class="form-field"><span>Execution key <strong>*</strong></span><input id="tool-execution-key" type="text" maxlength="80" placeholder="get_current_time" required /><small>Stable lowercase key used by the future backend dispatcher.</small></label>
+          <label class="form-field"><span>Execution key <strong>*</strong></span><input id="tool-execution-key" type="text" maxlength="80" placeholder="get_current_time" required /><small>Stable lowercase key of an implemented backend capability.</small></label>
           <label class="form-field"><span>Input schema</span><textarea id="tool-input-schema" rows="7" spellcheck="false">{}</textarea><small>JSON object describing the arguments accepted by the tool.</small></label>
           <label class="checkbox-field"><input id="tool-enabled" type="checkbox" checked /><span>Enabled for assignment</span></label>
           <p class="form-error" id="tool-form-error" role="alert" hidden></p>
@@ -395,6 +425,7 @@
     <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
-    <script src="app.js?v=20260928-2" defer></script>
+    <script src="voices.js?v=20261104-1" defer></script>
+    <script src="app.js?v=20261104-3" defer></script>
   </body>
 </html>

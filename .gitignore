@@ -11,3 +11,6 @@ __pycache__/
 # Local tooling output
 .DS_Store
 **/.temp/
+
+# Append-only local synthetic validation evidence (publish explicitly if desired)
+validation-results/

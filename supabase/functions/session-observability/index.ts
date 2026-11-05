@@ -66,20 +66,6 @@ function parseEvent(value: ObservabilityEvent): EventContext | null {
   }
 }
 
-async function upsertTurn(adminClient: any, event: EventContext, values: Record<string, unknown>) {
-  if (!event.turn_number) return null
-  const { data, error } = await adminClient
-    .from("session_turns")
-    .upsert({
-      session_id: event.session_id,
-      turn_number: event.turn_number,
-      ...values,
-    }, { onConflict: "session_id,turn_number" })
-    .select("id, user_speech_stopped_at")
-    .single()
-  if (error) throw new Error(error.message)
-  return data
-}
 
 async function findTurnId(adminClient: any, event: EventContext): Promise<string | null> {
   if (!event.turn_number) return null
@@ -94,60 +80,8 @@ async function findTurnId(adminClient: any, event: EventContext): Promise<string
 }
 
 async function materializeTurnEvent(adminClient: any, event: EventContext) {
-  const payload = event.payload
-  if (event.event_type === "turn.user_speech_stopped") {
-    await upsertTurn(adminClient, event, { user_speech_stopped_at: event.occurred_at })
-    return
-  }
-
-  if (event.event_type === "turn.transcript_completed") {
-    await upsertTurn(adminClient, event, {
-      user_transcript: typeof payload.transcript === "string" ? payload.transcript : "",
-      transcript_completed_at: event.occurred_at,
-    })
-    return
-  }
-
-  if (event.event_type === "turn.response_ready") {
-    await upsertTurn(adminClient, event, {
-      agent_transcript: typeof payload.transcript === "string" ? payload.transcript : "",
-      response_ready_at: event.occurred_at,
-    })
-    return
-  }
-
-  if (event.event_type === "turn.agent_audio_started") {
-    const turn = await upsertTurn(adminClient, event, {
-      agent_first_audio_started_at: event.occurred_at,
-    })
-    const speechStoppedAt = turn?.user_speech_stopped_at
-    const totalLatencyMs = speechStoppedAt
-      ? Math.max(0, Math.round(new Date(event.occurred_at).valueOf() - new Date(speechStoppedAt).valueOf()))
-      : null
-    if (totalLatencyMs != null) {
-      const { error } = await adminClient
-        .from("session_turns")
-        .update({ total_latency_ms: totalLatencyMs })
-        .eq("id", turn.id)
-      if (error) throw new Error(error.message)
-    }
-    return
-  }
-
-  if (event.event_type === "turn.completed") {
-    await upsertTurn(adminClient, event, {
-      status: "completed",
-      completed_at: event.occurred_at,
-    })
-    return
-  }
-
-  if (event.event_type === "turn.cancelled") {
-    await upsertTurn(adminClient, event, {
-      status: "cancelled",
-      completed_at: event.occurred_at,
-    })
-  }
+  const { error } = await adminClient.rpc("observe_turn_event", { p_event: event })
+  if (error) throw new Error(error.message)
 }
 
 async function materializeTrace(adminClient: any, event: EventContext) {
@@ -184,11 +118,13 @@ async function materializeToolCall(adminClient: any, event: EventContext) {
   const payload = event.payload
   const callId = typeof payload.tool_call_id === "string" ? payload.tool_call_id : event.event_id
   const sourceEventId = `${event.session_id}:${callId}`
+  const traceSourceEventId = `${sourceEventId}:trace`
   const turnId = await findTurnId(adminClient, event)
+  const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "unknown"
   const baseValues = {
     session_id: event.session_id,
     turn_id: turnId,
-    tool_name: typeof payload.tool_name === "string" ? payload.tool_name : "unknown",
+    tool_name: toolName,
     arguments: asObject(payload.arguments),
     source: "agent_worker",
     source_event_id: sourceEventId,
@@ -196,40 +132,116 @@ async function materializeToolCall(adminClient: any, event: EventContext) {
   }
 
   if (event.event_type === "tool.started") {
+    // Keep one stable span ID for this call so a retried terminal event can
+    // complete the same trace instead of creating a second visual span.
+    const { data: existing, error: existingError } = await adminClient
+      .from("tool_calls")
+      .select("trace_id, started_at, status")
+      .eq("source", "agent_worker")
+      .eq("source_event_id", sourceEventId)
+      .maybeSingle()
+    if (existingError) throw new Error(existingError.message)
+    if (existing?.status === "succeeded" || existing?.status === "failed") return
+    const traceId = existing?.trace_id ?? crypto.randomUUID()
+    const startedAt = existing?.started_at ?? event.occurred_at
+    const { error: traceError } = await adminClient.from("session_traces").upsert({
+      id: traceId,
+      session_id: event.session_id,
+      turn_id: turnId,
+      event_type: "trace.tool",
+      started_at: startedAt,
+      ended_at: null,
+      duration_ms: null,
+      status: "running",
+      metadata: {
+        tool_call_id: callId,
+        tool_name: toolName,
+        arguments: asObject(payload.arguments),
+      },
+      raw_payload: payload,
+      source: "agent_worker",
+      source_event_id: traceSourceEventId,
+      sequence_number: event.sequence_number,
+    }, { onConflict: "source,source_event_id" })
+    if (traceError) throw new Error(traceError.message)
+
     const { error } = await adminClient.from("tool_calls").upsert({
       ...baseValues,
+      trace_id: traceId,
       status: "started",
-      started_at: event.occurred_at,
+      started_at: startedAt,
     }, { onConflict: "source,source_event_id" })
     if (error) throw new Error(error.message)
     return
   }
 
   const status = event.event_type === "tool.failed" ? "failed" : "succeeded"
+  const traceStatus = status === "failed" ? "failed" : "completed"
   const completedAt = event.occurred_at
   const { data: existing, error: existingError } = await adminClient
     .from("tool_calls")
-    .select("id, started_at")
+    .select("id, started_at, trace_id, tool_name, turn_id, arguments")
     .eq("source", "agent_worker")
     .eq("source_event_id", sourceEventId)
     .maybeSingle()
   if (existingError) throw new Error(existingError.message)
 
-  const durationMs = existing?.started_at
-    ? Math.max(0, Math.round(new Date(completedAt).valueOf() - new Date(existing.started_at).valueOf()))
-    : null
-  const { error } = await adminClient
-    .from("tool_calls")
-    .update({
-      status,
-      completed_at: completedAt,
-      duration_ms: durationMs,
+  const startedAt = existing?.started_at ?? completedAt
+  const durationMs = typeof payload.duration_ms === "number" && payload.duration_ms >= 0
+    ? Math.round(payload.duration_ms)
+    : existing?.started_at
+      ? Math.max(0, Math.round(new Date(completedAt).valueOf() - new Date(existing.started_at).valueOf()))
+      : null
+  const traceId = existing?.trace_id ?? crypto.randomUUID()
+  const finalToolName = existing?.tool_name ?? toolName
+  const finalTurnId = existing?.turn_id ?? turnId
+  const finalArguments = existing?.arguments ?? asObject(payload.arguments)
+  const toolValues = {
+    ...baseValues,
+    turn_id: finalTurnId,
+    tool_name: finalToolName,
+    arguments: finalArguments,
+    trace_id: traceId,
+    status,
+    started_at: startedAt,
+    completed_at: completedAt,
+    duration_ms: durationMs,
+    result: payload.result ?? null,
+    error_message: typeof payload.error_message === "string" ? payload.error_message : null,
+  }
+  const { error: traceError } = await adminClient.from("session_traces").upsert({
+    id: traceId,
+    session_id: event.session_id,
+    turn_id: finalTurnId,
+    event_type: "trace.tool",
+    started_at: startedAt,
+    ended_at: completedAt,
+    duration_ms: durationMs,
+    status: traceStatus,
+    metadata: {
+      tool_call_id: callId,
+      tool_name: finalToolName,
+      arguments: finalArguments,
       result: payload.result ?? null,
       error_message: typeof payload.error_message === "string" ? payload.error_message : null,
-    })
-    .eq("source", "agent_worker")
-    .eq("source_event_id", sourceEventId)
-  if (error) throw new Error(error.message)
+    },
+    raw_payload: payload,
+    source: "agent_worker",
+    source_event_id: traceSourceEventId,
+    sequence_number: event.sequence_number,
+  }, { onConflict: "source,source_event_id" })
+  if (traceError) throw new Error(traceError.message)
+
+  const { error: toolError } = existing
+    ? await adminClient
+      .from("tool_calls")
+      .update(toolValues)
+      .eq("source", "agent_worker")
+      .eq("source_event_id", sourceEventId)
+    : await adminClient
+      .from("tool_calls")
+      .upsert(toolValues, { onConflict: "source,source_event_id" })
+  if (toolError) throw new Error(toolError.message)
 }
 
 /** Detect a repeated cumulative usage snapshot even when a retry has a new event ID. */
@@ -269,22 +281,12 @@ async function isDuplicateSessionUsage(adminClient: any, event: EventContext): P
 /** Persist cumulative session usage for agent-level token metrics. */
 async function materializeSessionUsage(adminClient: any, event: EventContext) {
   const totals = usageTokenTotals(event.payload)
-  const { data: existing, error: existingError } = await adminClient
-    .from("session_metrics")
-    .select("total_input_tokens, total_output_tokens, captured_at")
-    .eq("session_id", event.session_id)
-    .maybeSingle()
-  if (existingError) throw new Error(existingError.message)
-
-  const inputTokens = Math.max(existing?.total_input_tokens ?? 0, totals.input)
-  const outputTokens = Math.max(existing?.total_output_tokens ?? 0, totals.output)
-  const isOlderSnapshot = existing && inputTokens === existing.total_input_tokens && outputTokens === existing.total_output_tokens
-  const { error } = await adminClient.from("session_metrics").upsert({
-    session_id: event.session_id,
-    total_input_tokens: inputTokens,
-    total_output_tokens: outputTokens,
-    captured_at: isOlderSnapshot ? existing.captured_at : event.occurred_at,
-  }, { onConflict: "session_id" })
+  const { error } = await adminClient.rpc("observe_session_usage", {
+    p_session_id: event.session_id,
+    p_input: totals.input,
+    p_output: totals.output,
+    p_occurred_at: event.occurred_at,
+  })
   if (error) throw new Error(error.message)
 }
 

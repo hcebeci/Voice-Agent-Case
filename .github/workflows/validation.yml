@@ -1,0 +1,91 @@
+name: Offline validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: JavaScript, Python, and scripted conversations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUN_COLLECTION_MODEL_TEST: "0"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: Livekit-Agents/uv.lock
+      - name: Create artifact directory
+        run: mkdir -p validation-results
+      - name: Install locked Python dependencies
+        working-directory: Livekit-Agents
+        run: uv sync --frozen --python 3.12
+      - name: JavaScript regressions (no service credentials)
+        run: node --test ui/tests/*.test.cjs supabase/functions/*/*.test.mjs 2>&1 | tee validation-results/javascript.log
+      - name: Latency report regressions
+        run: python3 -m unittest discover -s tests -p 'test_answer_speed.py' 2>&1 | tee validation-results/latency-report.log
+      - name: Python regressions (real model test disabled)
+        working-directory: Livekit-Agents
+        run: uv run --frozen --no-env-file pytest --junitxml=../validation-results/pytest.xml 2>&1 | tee ../validation-results/pytest.log
+      - name: Deterministic conversation scenarios (no inference or publishing)
+        working-directory: Livekit-Agents
+        env:
+          PYTHONPATH: src
+        run: uv run --frozen --no-env-file python src/evaluation.py --mode scripted --output-dir ../validation-results/scripted 2>&1 | tee ../validation-results/scripted.log
+      - name: Retain evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-application-${{ github.run_id }}-${{ github.run_attempt }}
+          path: validation-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+  database:
+    name: Disposable PostgreSQL and handler integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: Livekit-Agents/uv.lock
+      - name: Install worker dependencies for real SQL boundary checks
+        working-directory: Livekit-Agents
+        run: uv sync --frozen --python 3.12
+      - name: Install PostgreSQL binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql postgresql-client
+          pg_config --bindir >> "$GITHUB_PATH"
+      - name: Test every migration and SQL regression in an isolated cluster
+        run: |
+          mkdir -p validation-results
+          python3 scripts/test-platform-database.py 2>&1 | tee validation-results/database.log
+      - name: Retain database evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-database-${{ github.run_id }}-${{ github.run_attempt }}
+          path: validation-results/
+          if-no-files-found: warn
+          retention-days: 30

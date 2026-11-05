@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multilingual voice library</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="voice-demo.css?v=20261104-3" />
+  <script src="voice-demo.js?v=20261104-2" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <a class="back" href="index.html">← Agent manager</a>
+      <p class="eyebrow">VOICE LIBRARY · MULTILINGUAL</p>
+      <h1>Find your agent’s voice.</h1>
+      <p class="intro">Browse every voice. Press play to hear a sample.</p>
+      <p class="hint">English previews. Google references use Chirp 3 HD; Gemini delivery may differ.</p>
+    </header>
+    <div class="toolbar">
+      <label class="search"><span class="sr-only">Search voices</span><input id="voice-search" type="search" placeholder="Search name, gender, or provider…" /></label>
+      <p id="voice-count" role="status">Loading voices…</p>
+    </div>
+    <p class="hint">Use ↑ and ↓ on the play buttons to browse. Press Enter or Space to listen.</p>
+    <div class="table-scroll">
+      <table aria-label="Multilingual voices">
+        <thead><tr><th scope="col"><span class="sr-only">Preview</span></th><th scope="col">Name</th><th scope="col">Language</th><th scope="col">Gender</th><th scope="col">Provider</th></tr></thead>
+        <tbody id="voice-rows"></tbody>
+      </table>
+    </div>
+    <p id="demo-status" class="status" role="status" aria-live="polite"></p>
+    <audio id="demo-audio" preload="none" hidden></audio>
+    <footer>All listed voices support English and Turkish. Samples are in English. Google’s published references use Chirp 3 HD; delivery may differ in Gemini calls. Audio plays directly from the sample host; this app stores no audio files.</footer>
+  </main>
+</body>
+</html>

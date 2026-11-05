@@ -8,22 +8,19 @@ For complete command-line provisioning, Auth user creation, function deployment,
 and initial agent configuration, follow the [setup runbook](../docs/SETUP.md).
 The ordered SQL list below is also suitable for Supabase SQL Editor.
 
-For a new project, open Supabase **SQL Editor** and run these files one at a
-time, in this order. Paths are relative to this directory:
+The authoritative complete migration order is generated from both SQL directories:
 
-1. `migrations/20260925_000001_initial_schema.sql`
-2. `manual-migrations/20260925_000002_agent_change_history.sql`
-3. `migrations/20260926000001_livekit_webhook_events.sql`
-4. `migrations/20260926000002_observability_event_contract.sql`
-5. `migrations/20260926000003_observability_processing_state.sql`
-6. `migrations/20260927000001_collection_customers.sql`
-7. `migrations/20260927000002_agent_tts_settings.sql`
-8. `migrations/20260927000003_collection_tools.sql`
-9. `migrations/20260928000001_observability_upsert_indexes.sql`
+```bash
+python3 scripts/migration-plan.py
+```
 
-The manual audit-history migration is outside the CLI migration directory and
-must be included explicitly. For an existing project, apply only outstanding
-migrations using its migration history; some files are not safe to rerun.
+Run it from the repository root. It includes historical manual audit history and
+all current migrations automatically. For fresh bootstrap, apply every printed
+file in order, stopping on error; for an existing project, inspect applied-file
+records and schema and apply only outstanding files. Never reset existing data.
+See the setup runbook for a complete non-destructive command-line workflow and
+`python3 scripts/test-platform-database.py` for disposable local SQL regression
+checks. `supabase db push` alone does not include the manual history migration.
 
 For customer-bound tests, also execute `seeds/collection_customers.sql` and
 validate with `manual-checks/collection-customers.sql`. The collection-tool

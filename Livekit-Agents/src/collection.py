@@ -5,7 +5,7 @@ Transitions are pure; the repository atomically commits state, effects and audit
 """
 
 from copy import deepcopy
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -251,6 +251,13 @@ def transition(
             ),
         )
 
+    if not user_turn_id:
+        return done("USER_MESSAGE_REQUIRED")
+    callback_at = callback_at.astimezone(timezone.utc)
+    operation_id = f"{user_turn_id}:{callback_at.isoformat(timespec='microseconds')}"
+    existing = state.get("callbacks", {}).get(operation_id)
+    if existing:
+        return done("CALLBACK_REQUESTED", existing, "success")
     if callback_at <= now:
         return done("CALLBACK_TIME_IN_PAST")
     if not customer or not customer.get("phone_e164"):
@@ -261,6 +268,10 @@ def transition(
         "timezone": customer["timezone"],
         "status": "pending",
     }
+    state.setdefault("callbacks", {})[operation_id] = receipt
     return done(
-        "CALLBACK_REQUESTED", receipt, "success", dict(receipt, kind="callback")
+        "CALLBACK_REQUESTED",
+        receipt,
+        "success",
+        dict(receipt, kind="callback", operation_id=operation_id),
     )

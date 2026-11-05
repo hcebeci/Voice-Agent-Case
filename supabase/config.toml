@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.session-observability]
 verify_jwt = false
+
+[functions.test-runs]
+verify_jwt = false

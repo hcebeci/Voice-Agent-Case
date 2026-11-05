@@ -1,0 +1,457 @@
+{
+  "version": "2026-11-04",
+  "sources": [
+    "https://docs.livekit.io/agents/models/tts/",
+    "https://docs.livekit.io/agents/models/tts/spacexai/",
+    "https://docs.livekit.io/agents/models/tts/gemini/",
+    "https://docs.cloud.google.com/text-to-speech/docs/gemini-tts"
+  ],
+  "models": [
+    {
+      "id": "xai/tts-1",
+      "provider": "xAI",
+      "name": "Text to Speech",
+      "default_voice": "ara",
+      "languages": [
+        "en",
+        "tr"
+      ],
+      "voices": [
+        {
+          "id": "altair",
+          "name": "Altair",
+          "gender": "male",
+          "description": "Elegant, refined",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-altair-en_audio.mp4"
+        },
+        {
+          "id": "ara",
+          "name": "Ara",
+          "gender": "female",
+          "description": "Warm and friendly, balanced and conversational",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-ara-en_audio.mp4"
+        },
+        {
+          "id": "atlas",
+          "name": "Atlas",
+          "gender": "male",
+          "description": "Confident, commanding",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-atlas-en_audio.mp4"
+        },
+        {
+          "id": "carina",
+          "name": "Carina",
+          "gender": "female",
+          "description": "Soft, empathetic",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-carina-en_audio.mp4"
+        },
+        {
+          "id": "castor",
+          "name": "Castor",
+          "gender": "male",
+          "description": "Charismatic, down-to-earth",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-castor-en_audio.mp4"
+        },
+        {
+          "id": "celeste",
+          "name": "Celeste",
+          "gender": "female",
+          "description": "Compassionate, confident",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-celeste-en_audio.mp4"
+        },
+        {
+          "id": "cosmo",
+          "name": "Cosmo",
+          "gender": "male",
+          "description": "Bright, curious",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-cosmo-en_audio.mp4"
+        },
+        {
+          "id": "eve",
+          "name": "Eve",
+          "gender": "female",
+          "description": "Energetic, upbeat, engaging and enthusiastic",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-eve-en_audio.mp4"
+        },
+        {
+          "id": "helios",
+          "name": "Helios",
+          "gender": "male",
+          "description": "Upbeat, energetic",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-helios-en_audio.mp4"
+        },
+        {
+          "id": "helix",
+          "name": "Helix",
+          "gender": "male",
+          "description": "Bold, dynamic",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-helix-en_audio.mp4"
+        },
+        {
+          "id": "iris",
+          "name": "Iris",
+          "gender": "female",
+          "description": "Friendly, upbeat",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-iris-en_audio.mp4"
+        },
+        {
+          "id": "kepler",
+          "name": "Kepler",
+          "gender": "male",
+          "description": "Inventive, forward-thinking",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-kepler-en_audio.mp4"
+        },
+        {
+          "id": "leo",
+          "name": "Leo",
+          "gender": "male",
+          "description": "Decisive and commanding, suitable for instructional content",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-leo-en_audio.mp4"
+        },
+        {
+          "id": "lumen",
+          "name": "Lumen",
+          "gender": "male",
+          "description": "Warm, articulate",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-lumen-en_audio.mp4"
+        },
+        {
+          "id": "luna",
+          "name": "Luna",
+          "gender": "female",
+          "description": "Gentle, patient",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-luna-en_audio.mp4"
+        },
+        {
+          "id": "lux",
+          "name": "Lux",
+          "gender": "male",
+          "description": "Grounded, calm",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-lux-en_audio.mp4"
+        },
+        {
+          "id": "naksh",
+          "name": "Naksh",
+          "gender": "male",
+          "description": "Warm, thoughtful",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-naksh-en_audio.mp4"
+        },
+        {
+          "id": "orion",
+          "name": "Orion",
+          "gender": "male",
+          "description": "Rich, cinematic",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-orion-en_audio.mp4"
+        },
+        {
+          "id": "perseus",
+          "name": "Perseus",
+          "gender": "male",
+          "description": "Strong, confident",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-perseus-en_audio.mp4"
+        },
+        {
+          "id": "rex",
+          "name": "Rex",
+          "gender": "male",
+          "description": "Professional and articulate, ideal for business applications",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-rex-en_audio.mp4"
+        },
+        {
+          "id": "rigel",
+          "name": "Rigel",
+          "gender": "male",
+          "description": "Precise, professional",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-rigel-en_audio.mp4"
+        },
+        {
+          "id": "sal",
+          "name": "Sal",
+          "gender": "male",
+          "description": "Smooth, balanced, versatile voice suitable for various contexts",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-sal-en_audio.mp4"
+        },
+        {
+          "id": "sirius",
+          "name": "Sirius",
+          "gender": "male",
+          "description": "Quick-witted, clever",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-sirius-en_audio.mp4"
+        },
+        {
+          "id": "ursa",
+          "name": "Ursa",
+          "gender": "female",
+          "description": "Friendly, warm",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-ursa-en_audio.mp4"
+        },
+        {
+          "id": "zagan",
+          "name": "Zagan",
+          "gender": "male",
+          "description": "Powerful, dramatic",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-zagan-en_audio.mp4"
+        },
+        {
+          "id": "zenith",
+          "name": "Zenith",
+          "gender": "male",
+          "description": "Sharp, focused",
+          "preview_url": "https://static.livekit.io/audio/voices/xai-tts-1-zenith-en_audio.mp4"
+        }
+      ]
+    },
+    {
+      "id": "google/gemini-3.8-flash-tts",
+      "provider": "Google",
+      "name": "Gemini 3.8 Flash TTS",
+      "default_voice": "Kore",
+      "languages": [
+        "en",
+        "tr"
+      ],
+      "voices": [
+        {
+          "id": "Achernar",
+          "name": "Achernar",
+          "gender": "female",
+          "description": "Soft, calm, and soothing voice with a higher pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-achernar.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Achird",
+          "name": "Achird",
+          "gender": "male",
+          "description": "Friendly, approachable, and warm voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-achird.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Algenib",
+          "name": "Algenib",
+          "gender": "male",
+          "description": "Gravelly, grounded, and hard-hitting voice with a low pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-algenib.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Algieba",
+          "name": "Algieba",
+          "gender": "male",
+          "description": "Smooth, relaxed, and polished voice with a low pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-algieba.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Alnilam",
+          "name": "Alnilam",
+          "gender": "male",
+          "description": "Firm, direct, and commanding voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-alnilam.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Aoede",
+          "name": "Aoede",
+          "gender": "female",
+          "description": "Breezy, light, and relaxed voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-aoeda.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Autonoe",
+          "name": "Autonoe",
+          "gender": "female",
+          "description": "Bright, positive, and enthusiastic voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-autonoe.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Callirrhoe",
+          "name": "Callirrhoe",
+          "gender": "female",
+          "description": "Easy-going, relaxed, and casual voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-callirrhoe.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Charon",
+          "name": "Charon",
+          "gender": "male",
+          "description": "Informative and steady voice with a low pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-charon.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Despina",
+          "name": "Despina",
+          "gender": "female",
+          "description": "Smooth, mellow, and polished voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-despina.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Enceladus",
+          "name": "Enceladus",
+          "gender": "male",
+          "description": "Breathy, intimate, and soft-spoken voice with a low pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-enceladus.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Erinome",
+          "name": "Erinome",
+          "gender": "female",
+          "description": "Clear, articulate, and precise voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-erinome.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Fenrir",
+          "name": "Fenrir",
+          "gender": "male",
+          "description": "Excitable, high-energy, and passionate voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-fenrir.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Gacrux",
+          "name": "Gacrux",
+          "gender": "female",
+          "description": "Mature, authoritative, and professional voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-gacrux.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Iapetus",
+          "name": "Iapetus",
+          "gender": "male",
+          "description": "Clear, crisp, and articulate voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-iapetus.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Kore",
+          "name": "Kore",
+          "gender": "female",
+          "description": "Firm, direct, and authoritative voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-kore.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Laomedeia",
+          "name": "Laomedeia",
+          "gender": "female",
+          "description": "Upbeat, energetic, and positive voice with a higher pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-laomedeia.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Leda",
+          "name": "Leda",
+          "gender": "female",
+          "description": "Youthful, vibrant, and energetic voice with a higher pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-leda.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Orus",
+          "name": "Orus",
+          "gender": "male",
+          "description": "Firm, serious, and no-nonsense voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-orus.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Puck",
+          "name": "Puck",
+          "gender": "male",
+          "description": "Upbeat, energetic, and cheerful voice with a rich, approachable tone.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-puck.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Pulcherrima",
+          "name": "Pulcherrima",
+          "gender": "neutral",
+          "description": "Forward, confident, and direct voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-pulcherrima.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Rasalgethi",
+          "name": "Rasalgethi",
+          "gender": "male",
+          "description": "Informative and measured voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-rasalgethi.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Sadachbia",
+          "name": "Sadachbia",
+          "gender": "male",
+          "description": "Lively, animated, and engaging voice with a low pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-sadachbia.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Sadaltager",
+          "name": "Sadaltager",
+          "gender": "male",
+          "description": "Knowledgeable and steady voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-sadaltager.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Schedar",
+          "name": "Schedar",
+          "gender": "male",
+          "description": "Even, balanced, and steady voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-schedar.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Sulafat",
+          "name": "Sulafat",
+          "gender": "female",
+          "description": "Warm, inviting, and comforting voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-sulafat.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Umbriel",
+          "name": "Umbriel",
+          "gender": "male",
+          "description": "Easy-going, laid-back, and casual voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-umbriel.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Vindemiatrix",
+          "name": "Vindemiatrix",
+          "gender": "female",
+          "description": "Gentle, mild, and calming voice with a medium pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-vindemiatrix.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Zephyr",
+          "name": "Zephyr",
+          "gender": "female",
+          "description": "Bright, positive, and forward-looking voice with a higher pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-zephyr.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        },
+        {
+          "id": "Zubenelgenubi",
+          "name": "Zubenelgenubi",
+          "gender": "male",
+          "description": "Casual, conversational, and laid-back voice with a lower-middle pitch.",
+          "preview_url": "https://docs.cloud.google.com/static/text-to-speech/docs/audio/chirp3-hd-zubenelgenubi.wav",
+          "preview_note": "Google voice reference \u00b7 Chirp 3 HD \u00b7 English. Gemini delivery may differ."
+        }
+      ]
+    }
+  ]
+}

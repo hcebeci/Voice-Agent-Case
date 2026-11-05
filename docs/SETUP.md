@@ -80,40 +80,38 @@ These files use plain `NAME=value` lines. Keep them private. The local worker
 also reads `supabase/.env`; the web server sends only the URL and publishable key
 to the browser. Do not put backend secrets in `ui/` or commit populated files.
 
-## 3. Apply the database in this exact order
+## 3. Apply the database without deleting existing data
 
-Use a fresh Supabase database. Run these files in the Supabase SQL Editor, one
-file at a time, stopping on the first error:
+The authoritative SQL plan is generated from **both** migration directories,
+including the historical manual audit migration and all current migrations:
 
-1. `supabase/migrations/20260925_000001_initial_schema.sql`
-2. `supabase/manual-migrations/20260925_000002_agent_change_history.sql`
-3. `supabase/migrations/20260926000001_livekit_webhook_events.sql`
-4. `supabase/migrations/20260926000002_observability_event_contract.sql`
-5. `supabase/migrations/20260926000003_observability_processing_state.sql`
-6. `supabase/migrations/20260927000001_collection_customers.sql`
-7. `supabase/migrations/20260927000002_agent_tts_settings.sql`
-8. `supabase/migrations/20260927000003_collection_tools.sql`
-9. `supabase/migrations/20260928000001_observability_upsert_indexes.sql`
-10. `supabase/seeds/collection_customers.sql`
+```bash
+python3 scripts/migration-plan.py
+```
 
-The seed creates six fictional customers. The tool migration registers four
-implemented tools. Neither creates an agent or a sign-in user.
+Review its output at the checkout you intend to deploy. It includes the November
+voice, session/collection idempotency, runtime access, atomic editor, and any later
+migrations automatically; do not copy an older fixed list. The plan only prints
+paths and never connects to a database. `supabase db push` alone omits the manual
+history migration and does not reproduce this bootstrap.
 
-The initial migration has a historical filename and agent history is outside
-the CLI migration directory. This ordered list is the bootstrap contract;
-`supabase db push` alone does not reproduce it. SQL Editor and direct `psql`
-application also do not populate the Supabase CLI migration ledger. Record the
-files applied and their commit before later adopting CLI migration management.
+For a fresh Supabase project, run each printed SQL file in order in SQL Editor,
+stopping on the first error. Then run `supabase/seeds/collection_customers.sql`.
+The seed inserts missing fictional customers only; it never resets accounts or
+call history. Migrations register tool definitions but create no agent or user.
 
-### Command-line alternative for an agent
+For an existing project, inspect its applied-file records and actual schema.
+Apply **only outstanding** files in the generated order, including historical
+manual SQL if absent. Do not replay the bootstrap, run a database reset, clear
+history, or use a seed to repair application state. Keep the checkout commit and
+successful-file ledger. SQL Editor/direct `psql` do not populate the Supabase CLI
+migration ledger; reconcile that ledger deliberately before adopting CLI pushes.
 
-Obtain connection parameters from the project's **Connect** dialog. Prefer a
-direct or session-pooler connection that your machine can reach. Set `PGHOST`,
-`PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` privately in the process
-environment; use the values from that dialog, including its full pooler username
-when applicable. Set `PGSSLMODE=require`. Do not print credentials or include
-them in a committed script. PostgreSQL also supports a private password file.
+### Command-line bootstrap for a confirmed fresh project
 
+Obtain connection parameters from the project's **Connect** dialog. Set `PGHOST`,
+`PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` privately (or use a private
+password file), and `PGSSLMODE=require`. Do not print credentials or commit them.
 Check the target before making changes:
 
 ```bash
@@ -121,38 +119,47 @@ psql -X --no-password -v ON_ERROR_STOP=1 -c \
   "select current_database(), current_user, to_regclass('public.agents') as existing_agents;"
 ```
 
-If `existing_agents` is non-null, follow **Existing projects and reruns** below.
-For a confirmed fresh target, run this block in Bash. It checks each result and
-records only successfully applied filenames in a local temporary ledger:
+If `existing_agents` is non-null, use the existing-project procedure above. For a
+confirmed fresh target, execute this from the repository root in Bash:
 
 ```bash
 bash <<'BASH'
 set -euo pipefail
+plan=$(mktemp "${TMPDIR:-/tmp}/voice-agent-plan.XXXXXX")
 ledger=$(mktemp "${TMPDIR:-/tmp}/voice-agent-sql.XXXXXX")
+python3 scripts/migration-plan.py > "$plan"
 printf 'Applied-file ledger: %s\n' "$ledger"
-for sql in \
-  supabase/migrations/20260925_000001_initial_schema.sql \
-  supabase/manual-migrations/20260925_000002_agent_change_history.sql \
-  supabase/migrations/20260926000001_livekit_webhook_events.sql \
-  supabase/migrations/20260926000002_observability_event_contract.sql \
-  supabase/migrations/20260926000003_observability_processing_state.sql \
-  supabase/migrations/20260927000001_collection_customers.sql \
-  supabase/migrations/20260927000002_agent_tts_settings.sql \
-  supabase/migrations/20260927000003_collection_tools.sql \
-  supabase/migrations/20260928000001_observability_upsert_indexes.sql \
-  supabase/seeds/collection_customers.sql
-do
+while IFS= read -r sql; do
   psql -X --no-password -v ON_ERROR_STOP=1 -f "$sql"
   printf '%s\n' "$sql" >> "$ledger"
-done
-psql -X --no-password -v ON_ERROR_STOP=1 \
-  -f supabase/manual-checks/collection-customers.sql
+done < "$plan"
+psql -X --no-password -v ON_ERROR_STOP=1 -f supabase/seeds/collection_customers.sql
+psql -X --no-password -v ON_ERROR_STOP=1 -f supabase/manual-checks/collection-customers.sql
+rm "$plan"
 BASH
 ```
 
-Keep the ledger and checkout commit in your deployment notes. An individual
-file can contain multiple statements or its own transaction: stopping on an
-error does not guarantee that the failed file made no changes.
+Stopping on error does not guarantee a partially applied historical file rolled
+back. Preserve the ledger and error, inspect schema state, and resume only after
+resolving it. Drain existing worker calls before changing collection RPC
+signatures. Apply migrations before deploying dependent functions and worker,
+then release the browser client. Do not declare a rollout verified from local
+tests alone.
+
+### Isolated database regression checks
+
+With PostgreSQL (`initdb`, `pg_ctl`, `psql`) installed locally:
+
+```bash
+python3 scripts/test-platform-database.py
+```
+
+This creates a temporary cluster using a private Unix socket with TCP disabled,
+applies the complete migration plan, and runs real SQL privilege, atomic-save,
+owner, replay, and terminal-state checks. It ignores configured `PG*` variables,
+never uses your Supabase credentials, and removes its cluster afterward. It
+models the Auth schema/roles needed by these tests; deployed Edge Function
+integration still needs separate verification.
 
 ## 4. Deploy the backend functions and secrets
 
@@ -199,15 +206,17 @@ npx supabase functions deploy --use-api
 npx supabase functions list
 ```
 
-Expect nine functions: `agents`, `tools`, `dashboard`, `sessions`,
-`agent-metrics`, `test-cases`, `livekit-session`, `livekit-webhook`, and
-`session-observability`. Local `.env` files are not uploaded automatically.
+Expect ten functions: `agents`, `tools`, `dashboard`, `sessions`,
+`agent-metrics`, `test-cases`, `livekit-session`, `livekit-webhook`,
+`session-observability`, and `test-runs`. Local `.env` files are not uploaded automatically.
 Supabase supplies its platform environment to deployed functions; only the
 three custom LiveKit secrets above need this upload step.
 
 Preserve `supabase/config.toml`: `livekit-webhook` verifies LiveKit's signature,
-and `session-observability` authenticates a backend secret. Their gateway JWT
-check is disabled intentionally. User-facing functions require an actual
+and `session-observability` authenticates a backend secret. `test-runs` accepts
+verified user JWTs for manual reviews/reads or the server secret for automated
+imports. Their gateway JWT checks are disabled intentionally; authentication is
+performed inside the handlers. Other user-facing functions require an actual
 signed-in user's access token. A publishable key alone does not sign a user in.
 See [Supabase function authentication](https://supabase.com/docs/guides/functions/auth)
 and the [CLI reference](https://supabase.com/docs/reference/cli/introduction).

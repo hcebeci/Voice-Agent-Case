@@ -10,6 +10,13 @@ import httpx
 from collection import response, transition
 
 logger = logging.getLogger(__name__)
+RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+
+def retryable_error(exc):
+    return not isinstance(exc, httpx.HTTPStatusError) or (
+        exc.response.status_code in RETRYABLE_STATUS_CODES
+    )
 
 
 class CollectionBackend:
@@ -27,20 +34,48 @@ class CollectionBackend:
     async def close(self):
         await self.client.aclose()
 
-    async def rpc(self, name, payload):
-        result = await self.client.post(name, json=payload)
+    async def rpc(self, name, payload, **request_options):
+        result = await self.client.post(name, json=payload, **request_options)
         result.raise_for_status()
         return result.json()
 
-    async def snapshot(self, request_id):
+    async def snapshot(
+        self, request_id, *, tool=None, arguments=None, **request_options
+    ):
+        payload = {"p_session_id": self.session_id, "p_request_id": request_id}
+        if tool is not None:
+            payload.update(p_tool_name=tool, p_arguments=arguments)
         value = await self.rpc(
             "collection_snapshot",
-            {"p_session_id": self.session_id, "p_request_id": request_id},
+            payload,
+            **request_options,
         )
         if value:
             self.state = value["state"]
             self.verified = bool(self.state.get("verified"))
         return value
+
+    async def startup_snapshot(self, *, timeout=22.0):
+        """Retry the initial read once, with a total deadline and no writes."""
+
+        async def load():
+            for attempt in range(2):
+                try:
+                    return await self.snapshot("startup", timeout=httpx.Timeout(10.0))
+                except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                    retryable = retryable_error(exc)
+                    logger.warning(
+                        "collection_startup_failed session=%s attempt=%s error=%s retrying=%s",
+                        self.session_id,
+                        attempt + 1,
+                        type(exc).__name__,
+                        retryable and attempt == 0,
+                    )
+                    if not retryable or attempt == 1:
+                        raise
+                    await asyncio.sleep(0.5)
+
+        return await asyncio.wait_for(load(), timeout=timeout)
 
     async def execute(self, tool, arguments, request_id, **evidence):
         """The request ID and evidence come from the runtime, never tool arguments."""
@@ -49,7 +84,9 @@ class CollectionBackend:
 
             async def operation():
                 nonlocal write_started
+                backoff_before_write = False
                 for attempt in range(2):
+                    commit_started = False
                     try:
                         attempt_started = time.monotonic()
                         logger.info(
@@ -59,11 +96,27 @@ class CollectionBackend:
                             tool,
                             attempt + 1,
                         )
-                        snapshot = await self.snapshot(request_id)
+                        snapshot = await self.snapshot(
+                            request_id, tool=tool, arguments=arguments
+                        )
                         if snapshot is None:
                             return response(tool, self.state, "SESSION_NOT_ACTIVE")
                         if snapshot["result"] is not None:
                             return snapshot["result"]
+                        if backoff_before_write:
+                            # Read the durable receipt immediately after an uncertain
+                            # write. Only a new write needs the retry backoff.
+                            await asyncio.sleep(0.2)
+                            backoff_before_write = False
+                            # State may change while backing off. Re-read before
+                            # computing a new effect, as the original retry did.
+                            snapshot = await self.snapshot(
+                                request_id, tool=tool, arguments=arguments
+                            )
+                            if snapshot is None:
+                                return response(tool, self.state, "SESSION_NOT_ACTIVE")
+                            if snapshot["result"] is not None:
+                                return snapshot["result"]
                         if snapshot["session_status"] not in (
                             "connecting",
                             "active",
@@ -108,6 +161,7 @@ class CollectionBackend:
                             else None
                         )
                         write_started = True
+                        commit_started = True
                         committed = await self.rpc(
                             "collection_commit",
                             {
@@ -117,9 +171,8 @@ class CollectionBackend:
                                 "p_state": new_state,
                                 "p_result": result,
                                 "p_effect": effect,
-                                "p_arguments": {}
-                                if tool == "verify_identity"
-                                else arguments,
+                                "p_arguments": arguments,
+                                "p_user_turn_id": evidence.get("user_turn_id"),
                             },
                         )
                         if committed.get("conflict"):
@@ -133,10 +186,10 @@ class CollectionBackend:
                             committed["result"]["code"],
                             round((time.monotonic() - attempt_started) * 1000),
                         )
-                        self.state = new_state
+                        self.state = committed.get("state", new_state)
                         self.verified = committed["result"]["verified_user"]
                         return committed["result"]
-                    except (httpx.TransportError, httpx.HTTPStatusError):
+                    except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                         # A replay first checks the durable result before attempting a write.
                         logger.warning(
                             "collection_attempt_failed session=%s request=%s tool=%s attempt=%s",
@@ -145,10 +198,17 @@ class CollectionBackend:
                             tool,
                             attempt + 1,
                         )
+                        if not retryable_error(exc):
+                            raise
                         if attempt == 0:
-                            await asyncio.sleep(0.2)
+                            if commit_started:
+                                backoff_before_write = True
+                            else:
+                                await asyncio.sleep(0.2)
                 # Final lookup reconciles a write whose response was lost.
-                snapshot = await self.snapshot(request_id)
+                snapshot = await self.snapshot(
+                    request_id, tool=tool, arguments=arguments
+                )
                 if snapshot and snapshot["result"]:
                     return snapshot["result"]
 

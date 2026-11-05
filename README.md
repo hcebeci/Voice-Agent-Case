@@ -239,6 +239,30 @@ explicitly dispatch the worker named `Voice-Agent-Case`.
 
 ## Validation
 
+### Test scope
+
+This table describes implemented checks, not execution results or a measured
+coverage percentage. Some newer suites are local additions; see the
+[scope and evidence guide](docs/TEST_SCOPE.md) for revision boundaries,
+validation layers, and concrete scenario examples.
+
+| Area | What is checked | Test method / boundary |
+| --- | --- | --- |
+| Agent configuration | Supplied instructions, enabled tools, dispatch configuration, and selected voices. | Configuration and scripted SDK tests; not a complete dashboard-to-worker call. Voice checks include local additions. |
+| Collection rules | Identity-attempt limits, payment amount/date boundaries, and required review/confirmation order. | Deterministic policy and tool tests; scripted calls do not establish language understanding. |
+| Failure handling | Selected lost-response, retry, startup, and event-delivery cases. | Simulated failures and local storage checks; not arbitrary outages or unlimited logging durability. Some suites are local additions. |
+| Browser call logic | Customer/direction selection, microphone-error handling, and transcript ordering. | Simulated browser, room, microphone, and API objects; not real audio or browser rendering. Transcript checks include local additions. |
+| Session reporting | Usage aggregation, turn/tool events, and webhook-to-status mappings. | Helper and event tests; webhook helpers do not verify signed HTTP delivery. |
+| Database and handlers | Fresh migrations, selected access rules, transaction rollback, and event projections. | Local PostgreSQL integration suites; external authentication is modeled, not hosted. These suites are local additions. |
+| Conversation behavior | Selected expected tool effects with scripted or real-model conversations. | Scripted evaluations are deterministic; real-model/audio checks are separate opt-in runs. New collection scenarios are local additions. |
+
+The [scenario examples](docs/TEST_SCOPE.md#specific-scenario-examples) state the
+setup, action, expected assertion, and boundary for each check. A manual
+acceptance checklist is recorded separately; an unchecked or unexecuted item
+is not evidence of a pass.
+
+### Run the checks
+
 Python worker tests, from `Livekit-Agents/`:
 
 ```console
@@ -251,14 +275,17 @@ JavaScript tests, from the repository root:
 node --test ui/tests/*.test.cjs supabase/functions/*/*.test.mjs
 ```
 
-Optional default-assistant simulations, from `Livekit-Agents/`:
+Free scripted collection scenarios, from `Livekit-Agents/`:
 
 ```console
-uv run --env-file .env.local lk agent simulate --scenarios scenarios.yaml
+uv run python src/evaluation.py --mode scripted
 ```
 
-Simulations use LiveKit Cloud and may incur inference charges. They exercise the
-default assistant, rather than the full dashboard or customer workflow.
+Scripted runs check SDK/tool mechanics and final effects without inference.
+Fictional customer DOB/postal information remains uncensored. The Tests page can
+retain human audio reviews and browse validation history after setup/deployment.
+See the [validation guide](docs/VALIDATION.md) for real-model/audio scenarios,
+isolated PostgreSQL integration tests, logging durability and evidence limits.
 
 ## Troubleshooting and reference
 

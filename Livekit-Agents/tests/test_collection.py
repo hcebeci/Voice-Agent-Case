@@ -155,10 +155,13 @@ def test_three_failed_attempts_lock_and_invalid_input_does_not_count():
 
 def test_callback_no_contact_then_valid_request():
     args = {"callback_at": "2026-09-28T14:00:00+03:00"}
-    _, result, _ = run("request_callback", args)
+    _, result, _ = run("request_callback", args, user_turn_id="callback-user-1")
     assert result["code"] == "CALLBACK_CONTACT_MISSING"
     _, result, effect = run(
-        "request_callback", args, customer=dict(CUSTOMER, phone_e164="+905551234567")
+        "request_callback",
+        args,
+        customer=dict(CUSTOMER, phone_e164="+905551234567"),
+        user_turn_id="callback-user-1",
     )
     assert result["code"] == "CALLBACK_REQUESTED"
     assert result["verified_user"] is False

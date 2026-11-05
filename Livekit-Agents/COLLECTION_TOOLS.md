@@ -98,9 +98,37 @@ false failure or success. Session verification is preserved across outages.
 Application logs record attempt IDs, failures and duration without input values.
 Existing SDK observability stores tool execution events; structured technical
 errors are classified as failures and policy rejections as completed executions.
-Verification tool arguments and pre-verification application transcript events
-are redacted. Avoid enabling raw SDK/provider content tracing or transcript
-exports for real identity data; those are separate from this application logger.
+Assessment customers are synthetic. Full user and assistant transcripts and
+verification tool arguments (including synthetic DOB and postal code) are
+intentionally retained in test history and tool traces, so evaluators can inspect
+what the model heard and executed. Only the separate SQL `collection.tool_result`
+audit redacts verification arguments; that does not redact the transcript or the
+SDK tool trace. This demo does not implement a real-customer retention policy.
+Do not treat its complete test trace storage as a production privacy control.
+
+Observations first enter a durable SQLite outbox outside the checkout. Configure
+`VOICE_AGENT_OBSERVABILITY_SPOOL_DIR` to a persistent writable volume in hosted
+workers; otherwise it uses `$XDG_STATE_HOME/voice-agent-case/observability` (or
+`~/.local/state/voice-agent-case/observability`). The directory and database are
+created with owner-only permissions. The outbox contains full synthetic event
+payloads but never the Supabase credential. Use persistent storage to survive a
+container replacement; process restart alone cannot preserve an ephemeral disk.
+
+The endpoint-scoped outbox admits at most 10,000 pending events / 32 MiB of event
+payloads, with a 64 MiB SQLite database page ceiling. At capacity or on disk errors,
+capture rejects the new event and emits an error; it never evicts unacknowledged
+events silently. The client exposes `pending_count`, `dropped_events`, and
+`last_delivery_error` for inspection. Each event keeps its UUID and session
+sequence across retries and worker restarts. Workers replay earlier sessions for
+the same backend endpoint; backend event-ID uniqueness makes duplicate delivery
+safe. A failing oldest event is retained and retried before newer events.
+
+Delivery retries run in the background. Shutdown waits at most three seconds for
+delivery, then cancels the sender, logs the remaining count, and leaves pending
+events on disk for a later worker. This is durable local buffering with bounded
+capacity, not a promise of delivery after disk loss or permanent backend failure.
+LLM timing listeners attach to the actual session LLM before inference; aggregate
+usage and individual provider timing remain separate observations.
 
 ## Validation
 

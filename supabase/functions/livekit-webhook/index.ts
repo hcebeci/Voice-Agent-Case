@@ -57,7 +57,8 @@ async function updateSessionLifecycle(adminClient: any, event: LiveKitEvent, occ
     occurredAt,
   })
   if (!lifecycleDecision) {
-    await adminClient.from("sessions").update({ last_livekit_event_at: occurredAt }).eq("id", session.id)
+    const { error } = await adminClient.from("sessions").update({ last_livekit_event_at: occurredAt }).eq("id", session.id)
+    if (error) throw new Error(error.message)
     return
   }
 
@@ -116,16 +117,20 @@ async function processWebhook(request: Request, context: any): Promise<Response>
 
   try {
     await updateSessionLifecycle(context.supabaseAdmin, event, occurredAt)
-    await context.supabaseAdmin
-      .from("livekit_webhook_events")
-      .update({ processed_at: new Date().toISOString() })
-      .eq("event_id", event.id)
-
-    await context.supabaseAdmin
+    const { error: materializedError } = await context.supabaseAdmin
       .from("session_events")
       .update({ processed_at: new Date().toISOString(), processing_error: null })
       .eq("source", "livekit_webhook")
       .eq("source_event_id", event.id)
+    if (materializedError) throw new Error(materializedError.message)
+
+    // A retry may skip a processed receipt, so acknowledge it only after all
+    // materialization writes have succeeded. A lost ACK is safe to replay.
+    const { error: processedError } = await context.supabaseAdmin
+      .from("livekit_webhook_events")
+      .update({ processed_at: new Date().toISOString(), processing_error: null })
+      .eq("event_id", event.id)
+    if (processedError) throw new Error(processedError.message)
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown webhook processing error."
     await context.supabaseAdmin
