@@ -1,0 +1,86 @@
+ok 1 - selected multilingual voice is accepted for its model
+ok 2 - rejects cross-provider, arbitrary, and invalid voices
+ok 3 - missing voice selects provider default; existing settings remain valid
+ok 4 - only explicitly assigned enabled tools are dispatched
+ok 5 - unknown implementations cannot run and payment prerequisites are explicit
+ok 6 - both call directions are accepted and invalid directions rejected
+ok 7 - room start activates a connecting session and records its start
+ok 8 - room finish completes an active session
+ok 9 - an aborted connection only fails a session still connecting
+ok 10 - unknown events only advance the lifecycle timestamp
+ok 11 - aggregates LLM token entries and ignores speech model usage
+ok 12 - accepts the camelCase format used by some serialized providers
+ok 13 - returns zero for missing or invalid usage data
+ok 14 - pagination includes a deterministic tie breaker and no cursor on final page
+ok 15 - invalid or filter-injecting cursors are rejected
+ok 16 - users cannot claim an automated execution type
+ok 17 - manual capture retains fictional identity data and replay returns immutable first capture
+ok 18 - manual report ID rejects changed input or a different owner
+ok 19 - real customer manual captures are denied before retaining evidence
+ok 20 - service exact duplicate succeeds; changed evidence with same ID conflicts
+ok 21 - history uses bounded cursor paging and rejects malformed cursors
+ok 22 - missing audio latency stays unknown rather than becoming a zero sample
+ok 23 - retained synthetic evidence preserves verification values
+ok 24 - rejects non-test customer reports and unknown verdicts
+ok 25 - hash is independent of object property order but covers transcript and verdict
+ok 26 - history cursors round trip and reject query injection
+ok 27 - dashboard GET reads data without mutating a long-running call
+ok 28 - browser rejects active/connecting and delegates close with verified owner
+ok 29 - agent editor sends configuration and assignments in one RPC
+ok 30 - session start delegates coherent snapshot to reservation without Edge prefetch
+ok 31 - accepts a valid backend tool definition
+ok 32 - rejects unsafe execution keys
+ok 33 - rejects duplicate agent assignments
+ok 34 - streaming a long transcript reuses timestamp formatting infrastructure
+ok 35 - connected call controls do not wait for a dashboard response
+ok 36 - ending a call keeps its dashboard when the detached start refresh arrives last
+ok 37 - a stale dashboard error cannot replace a newer successful refresh
+ok 38 - a dashboard success from a previous authenticated session is ignored
+ok 39 - a dashboard error from a previous authenticated session is ignored
+ok 40 - the current dashboard request still displays its error
+ok 41 - test call sends selected agent, customer and direction
+ok 42 - user-initiated call prompts tester to speak first
+ok 43 - microphone failure marks session failed and disconnects room
+ok 44 - customer fixture HTML is escaped
+ok 45 - normal agent call works without a test customer
+ok 46 - stream registration receives the greeting before database transcript reads
+ok 47 - interim recognition revisions replace words instead of duplicating turns
+ok 48 - live chunks appear before stream completion and final trailer is honored
+ok 49 - late interim stream cannot overwrite a final correction
+ok 50 - partial final stream supersedes older interim streams before it closes
+ok 51 - speaker changes create turns and delayed text stays in its original position
+ok 52 - legacy captions work when text streams are unavailable
+ok 53 - dual-published captions with different legacy and stream IDs render once
+ok 54 - genuinely repeated utterances with distinct stream IDs are retained
+ok 55 - stream error preserves received words and marks transcript partial
+ok 56 - failed final stream with no chunks preserves the preceding interim words
+ok 57 - ending a call preserves transcript and allows closing it afterward
+ok 58 - new calls clear old transcript and ignore old in-flight streams
+ok 59 - customer facts are shown inside the call with escaped verification values
+ok 60 - uncertain session creation retries with the same key
+ok 61 - pending dispatch response retains identity without opening a room
+ok 62 - a completed call followed by a new call uses a fresh operation key
+ok 63 - pending call identity survives a browser reload
+ok 64 - logout disconnects the room and hides retained call details
+ok 65 - auth loss disconnects a room even without explicit logout
+ok 66 - agent save submits configuration and assignments together and prevents double submit
+ok 67 - agent save is blocked until assignment loading finishes
+ok 68 - history load more keeps the agent filter and appends older sessions
+ok 69 - stale session details cannot overwrite a newer selection
+ok 70 - validation history paginates real endpoint and keeps verdicts distinct
+ok 71 - saved validation detail retains complete synthetic facts and escapes transcript HTML
+ok 72 - manual audio review has stable retry identity and sends a structured expectation
+ok 73 - a delayed editor assignment response cannot replace the newly selected agent tools
+ok 74 - changing active session replaces its polling timer
+ok 75 - catalog contains only the requested multilingual Google and xAI voices
+ok 76 - selection restores, provider switch resets, hosted playback stops on change
+ok 77 - legacy saved voices remain selectable without exposing new legacy choices
+ok 78 - failed catalog loading blocks saving an unloaded selection
+1..78
+# tests 78
+# suites 0
+# pass 78
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0

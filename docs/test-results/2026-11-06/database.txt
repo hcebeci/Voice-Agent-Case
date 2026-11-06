@@ -1,0 +1,8 @@
+PASS supabase/tests/ordered-tool-observability.sql
+PASS supabase/tests/platform.sql
+PASS supabase/tests/session-configuration.sql
+PASS supabase/tests/validation-history.sql
+PASS real tool projection: terminal-before-start, retry, concurrent connections serialize both tool and trace
+PASS real observability handler -> PostgreSQL -> session serializer: reverse arrival, stale revisions, duplicate events/traces, recoverable outage, uncensored synthetic transcript
+PASS production CollectionBackend -> PostgreSQL: identity gate, minimum, review ordering, exact saved effect, lost-ack recovery, duplicate replay, unchanged balance
+PASS fresh database: 19 migrations (including manual history)

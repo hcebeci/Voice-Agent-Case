@@ -6,12 +6,18 @@ result. The [README](../README.md#test-scope) summarizes scope; the
 
 ## Revision and result boundaries
 
-This inventory was rechecked against committed revision `06ac0b4` on
-6 November 2026. Voice, database/handler, evaluation, audio-scenario, and CI files
-are now committed; the earlier unpublished-files warning no longer applies.
-The main `scenarios.yaml` contains collection scenarios, `scenarios.audio.yaml`
-contains an audio interruption scenario, and `scenarios.starter.yaml` retains
-the starter-assistant scenarios. Included fixtures are not completed runs.
+The [README matrix](../README.md#test-scope) uses seven columns: **Area**,
+**Test type**, **How it works**, **Functional checks**, **Failure / edge checks**,
+**Latest result**, and **Boundary**. Manual tests branch under the same areas as
+automated tests, so a simulated result is never substituted for a real interaction.
+
+The inventory and [latest offline results](test-results/2026-11-06-offline.md)
+refer to source revision `85f3e7a`, checked on 6 November 2026. Automated evidence
+is linked separately from user-reported manual audio checks. The current source
+includes voice, database/handler, evaluation, audio-scenario, and CI suites.
+`scenarios.yaml` contains collection scenarios, `scenarios.audio.yaml` contains
+an interruption scenario, and `scenarios.starter.yaml` retains starter cases.
+Included fixtures alone are not completed runs.
 
 Keep three statements separate:
 
@@ -20,10 +26,33 @@ Keep three statements separate:
 - **Passed:** its assertions succeeded in that execution; record failures and
   skips alongside passes.
 
-This documentation update does not execute tests. It reports no new pass counts
-and no measured line or branch coverage. When recording a run, include the commit
-and any local changes, command, date, environment, result, skips, and evidence
-location. Retain unsuccessful and inconclusive runs too.
+The latest offline run recorded **108 Python passes and 1 skipped real-model
+test, 78 JavaScript passes, 5 answer-speed report passes, 7 scripted scenario
+passes, and passing database/handler integration across 19 migrations**. See
+[the execution report](test-results/2026-11-06-offline.md) for commands, retained
+outputs, scenario assertions, environment, and unexecuted checks. Counts are not
+line/branch coverage measurements or per-area totals.
+
+When recording a new run, include the commit and any local changes, command,
+date, environment, result, skips, and evidence location. Retain unsuccessful and
+inconclusive runs. Do not silently carry these results forward to changed code.
+
+### Reading the latest-result checklists
+
+- **✓ Demonstrated:** an assertion succeeded in the linked automated run, within
+  the row's boundary. It does not guarantee every related input or environment.
+- **□ Evidence needed:** an individual manual or opt-in item was not established
+  by the reviewed evidence. It is not a failed assertion or an automated pass.
+- **User-reported:** earlier manual interaction was reported without independently
+  reviewing per-session evidence in this run. Preserve that provenance.
+- **Skipped / not run:** distinguish an explicit runner skip from an evaluation
+  that was never executed.
+
+Record manual evidence as **Observed** for what a reviewer saw/heard and
+**Verified in records** for the exact transcript, tool result, or persisted effect
+reviewed. Include configuration, browser/device, date, reviewer, session/report
+ID, expected outcome and actual outcome. The application's **Record audio
+validation** feature supports this; its human verdict is not an automated grade.
 
 ## Validation layers
 
@@ -44,7 +73,7 @@ single passing model conversation does not establish general conversational reli
 Write each scenario as **given a known setup → perform an action → assert an
 observable outcome**. Link it to the test that makes that assertion and state
 which dependencies are simulated. These examples describe existing checks;
-they are not statements that the checks passed in this review.
+the linked execution report establishes whether their supporting suites passed.
 
 | Scenario and expected assertion | Existing test | Test method / boundary |
 | --- | --- | --- |
@@ -78,9 +107,12 @@ that checks are scheduled, not that a particular revision passed them.
 
 ## Manual acceptance checklist
 
-Use this checklist when verifying the deployed application. Every item begins
-**not run**; mark passed, failed, or inconclusive only after recording the
-execution and evidence. These items are separate from automated test results.
+Use this checklist when verifying the deployed application. The detailed items
+below remain **not independently verified** in the latest run. Earlier manual
+audio checks in both directions are [user-reported](IMPLEMENTATION_STATUS.md),
+without per-scenario evidence reviewed here. Mark an item passed, failed, or
+inconclusive only after recording its execution and evidence; automated suite
+results do not complete this checklist.
 
 - [ ] Sign in as an ordinary user and load the dashboard APIs. Separately call
   the protected `agents` endpoint without a user session; expect rejection.

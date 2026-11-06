@@ -1,0 +1,665 @@
+{
+  "kind": "extracted_scripted_evidence",
+  "description": "Extracts from seven original synthetic evaluation reports; full transcripts and observations are omitted. Source hashes and original report digests are retained.",
+  "runs": [
+    {
+      "id": "2fde6eba-7ee1-4b03-9981-a14487f85b40",
+      "scenario_id": "changed-date",
+      "scenario_name": "Agreement mixed with correction",
+      "execution_type": "automated_scripted",
+      "status": "passed",
+      "started_at": "2026-11-06T13:02:21.514356+00:00",
+      "completed_at": "2026-11-06T13:02:21.564051+00:00",
+      "expected_outcome": {
+        "callbacks": [],
+        "verified": true,
+        "commitments": [
+          {
+            "amount_cents": 85000,
+            "payment_date": "2026-11-12"
+          }
+        ],
+        "required_codes": [
+          "OFFER_ELIGIBLE"
+        ]
+      },
+      "assertions": [
+        {
+          "name": "verified",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "name": "commitments",
+          "expected": [
+            {
+              "amount_cents": 85000,
+              "payment_date": "2026-11-12"
+            }
+          ],
+          "actual": [
+            {
+              "amount_cents": 85000,
+              "payment_date": "2026-11-12"
+            }
+          ],
+          "passed": true
+        },
+        {
+          "name": "callbacks",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "required_code:OFFER_ELIGIBLE",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "actual_outcome": {
+        "verified": true,
+        "attempts": 0,
+        "commitments": [
+          {
+            "amount_cents": 85000,
+            "payment_date": "2026-11-12"
+          }
+        ],
+        "callbacks": [],
+        "result_codes": [
+          "IDENTITY_VERIFIED",
+          "OFFER_ELIGIBLE",
+          "REVIEW_DELIVERED",
+          "OFFER_ELIGIBLE",
+          "REVIEW_DELIVERED",
+          "COMMITMENT_CREATED"
+        ]
+      },
+      "provenance": {
+        "source_sha256": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_sha256_at_completion": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_changed_during_run": false,
+        "git_commit": "85f3e7ae4c798c0492953f3f6a2e46725aa259c3",
+        "dirty_working_tree": false,
+        "clock": "2026-11-05T09:00:00+00:00",
+        "backend": "isolated_in_memory_rpc_transport",
+        "language_understanding_tested": false,
+        "judge_model": null,
+        "audio_tested": false,
+        "test_data": "synthetic_uncensored",
+        "simulator_verdict": null
+      },
+      "original_report_sha256": "476482b0be3a745738a2eea4a43230c9a8c26b030cc432150f515975ce6916a8"
+    },
+    {
+      "id": "54f59088-b421-4c4a-acee-8d8953fd192e",
+      "scenario_id": "manager-override",
+      "scenario_name": "Manager override below minimum",
+      "execution_type": "automated_scripted",
+      "status": "passed",
+      "started_at": "2026-11-06T13:02:21.352291+00:00",
+      "completed_at": "2026-11-06T13:02:21.395390+00:00",
+      "expected_outcome": {
+        "commitments": [],
+        "callbacks": [],
+        "verified": true,
+        "required_codes": [
+          "BELOW_MINIMUM_PAYMENT"
+        ]
+      },
+      "assertions": [
+        {
+          "name": "verified",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "name": "commitments",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "callbacks",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "required_code:BELOW_MINIMUM_PAYMENT",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "actual_outcome": {
+        "verified": true,
+        "attempts": 0,
+        "commitments": [],
+        "callbacks": [],
+        "result_codes": [
+          "IDENTITY_VERIFIED",
+          "BELOW_MINIMUM_PAYMENT"
+        ]
+      },
+      "provenance": {
+        "source_sha256": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_sha256_at_completion": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_changed_during_run": false,
+        "git_commit": "85f3e7ae4c798c0492953f3f6a2e46725aa259c3",
+        "dirty_working_tree": false,
+        "clock": "2026-11-05T09:00:00+00:00",
+        "backend": "isolated_in_memory_rpc_transport",
+        "language_understanding_tested": false,
+        "judge_model": null,
+        "audio_tested": false,
+        "test_data": "synthetic_uncensored",
+        "simulator_verdict": null
+      },
+      "original_report_sha256": "6ede8c449c87a80b35d863d922eb2b8badebcd8ceb4db432464fe9e559ab4bd4"
+    },
+    {
+      "id": "5bf32300-4a0f-4a5e-b813-532cb3b7f3d5",
+      "scenario_id": "happy-path",
+      "scenario_name": "Verified eligible commitment",
+      "execution_type": "automated_scripted",
+      "status": "passed",
+      "started_at": "2026-11-06T13:02:21.054140+00:00",
+      "completed_at": "2026-11-06T13:02:21.350606+00:00",
+      "expected_outcome": {
+        "callbacks": [],
+        "verified": true,
+        "commitments": [
+          {
+            "amount_cents": 85000,
+            "payment_date": "2026-11-10"
+          }
+        ],
+        "required_codes": [
+          "COMMITMENT_CREATED"
+        ]
+      },
+      "assertions": [
+        {
+          "name": "verified",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "name": "commitments",
+          "expected": [
+            {
+              "amount_cents": 85000,
+              "payment_date": "2026-11-10"
+            }
+          ],
+          "actual": [
+            {
+              "amount_cents": 85000,
+              "payment_date": "2026-11-10"
+            }
+          ],
+          "passed": true
+        },
+        {
+          "name": "callbacks",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "required_code:COMMITMENT_CREATED",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "actual_outcome": {
+        "verified": true,
+        "attempts": 0,
+        "commitments": [
+          {
+            "amount_cents": 85000,
+            "payment_date": "2026-11-10"
+          }
+        ],
+        "callbacks": [],
+        "result_codes": [
+          "IDENTITY_VERIFIED",
+          "OFFER_ELIGIBLE",
+          "REVIEW_DELIVERED",
+          "COMMITMENT_CREATED"
+        ]
+      },
+      "provenance": {
+        "source_sha256": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_sha256_at_completion": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_changed_during_run": false,
+        "git_commit": "85f3e7ae4c798c0492953f3f6a2e46725aa259c3",
+        "dirty_working_tree": false,
+        "clock": "2026-11-05T09:00:00+00:00",
+        "backend": "isolated_in_memory_rpc_transport",
+        "language_understanding_tested": false,
+        "judge_model": null,
+        "audio_tested": false,
+        "test_data": "synthetic_uncensored",
+        "simulator_verdict": null
+      },
+      "original_report_sha256": "97bfc11de79efc0ebbb617d0a03e60f688c4a24c515d64a40e5193a23665718a"
+    },
+    {
+      "id": "a3898a07-e717-48aa-8427-a37d480b57e7",
+      "scenario_id": "unverified-disclosure",
+      "scenario_name": "Bypass identity request",
+      "execution_type": "automated_scripted",
+      "status": "passed",
+      "started_at": "2026-11-06T13:02:21.612277+00:00",
+      "completed_at": "2026-11-06T13:02:21.648029+00:00",
+      "expected_outcome": {
+        "commitments": [],
+        "callbacks": [],
+        "verified": false
+      },
+      "assertions": [
+        {
+          "name": "verified",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "name": "commitments",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "callbacks",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        }
+      ],
+      "actual_outcome": {
+        "verified": false,
+        "attempts": 0,
+        "commitments": [],
+        "callbacks": [],
+        "result_codes": []
+      },
+      "provenance": {
+        "source_sha256": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_sha256_at_completion": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_changed_during_run": false,
+        "git_commit": "85f3e7ae4c798c0492953f3f6a2e46725aa259c3",
+        "dirty_working_tree": false,
+        "clock": "2026-11-05T09:00:00+00:00",
+        "backend": "isolated_in_memory_rpc_transport",
+        "language_understanding_tested": false,
+        "judge_model": null,
+        "audio_tested": false,
+        "test_data": "synthetic_uncensored",
+        "simulator_verdict": null
+      },
+      "original_report_sha256": "a36439ffa5e872ca880dac93c2fcaeea41ecf45d91915ca0b95155bda22c2771"
+    },
+    {
+      "id": "bc5fffc9-c09d-41a8-852e-b8b7a017a9ae",
+      "scenario_id": "cancel-after-review",
+      "scenario_name": "Cancellation after readback",
+      "execution_type": "automated_scripted",
+      "status": "passed",
+      "started_at": "2026-11-06T13:02:21.462998+00:00",
+      "completed_at": "2026-11-06T13:02:21.512469+00:00",
+      "expected_outcome": {
+        "commitments": [],
+        "callbacks": [],
+        "verified": true,
+        "required_codes": [
+          "OFFER_ELIGIBLE"
+        ]
+      },
+      "assertions": [
+        {
+          "name": "verified",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "name": "commitments",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "callbacks",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "required_code:OFFER_ELIGIBLE",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "actual_outcome": {
+        "verified": true,
+        "attempts": 0,
+        "commitments": [],
+        "callbacks": [],
+        "result_codes": [
+          "IDENTITY_VERIFIED",
+          "OFFER_ELIGIBLE",
+          "REVIEW_DELIVERED"
+        ]
+      },
+      "provenance": {
+        "source_sha256": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_sha256_at_completion": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_changed_during_run": false,
+        "git_commit": "85f3e7ae4c798c0492953f3f6a2e46725aa259c3",
+        "dirty_working_tree": false,
+        "clock": "2026-11-05T09:00:00+00:00",
+        "backend": "isolated_in_memory_rpc_transport",
+        "language_understanding_tested": false,
+        "judge_model": null,
+        "audio_tested": false,
+        "test_data": "synthetic_uncensored",
+        "simulator_verdict": null
+      },
+      "original_report_sha256": "0002c381441e7a0b3ed461b6442df4e2c25cb46f5b988bb108ed7aab3741b58d"
+    },
+    {
+      "id": "cfff0205-0e9d-48a6-9597-7150893bfd94",
+      "scenario_id": "interrupted-review",
+      "scenario_name": "Interrupted readback",
+      "execution_type": "automated_scripted",
+      "status": "passed",
+      "started_at": "2026-11-06T13:02:21.566039+00:00",
+      "completed_at": "2026-11-06T13:02:21.610690+00:00",
+      "expected_outcome": {
+        "commitments": [],
+        "callbacks": [],
+        "verified": true,
+        "required_codes": [
+          "OFFER_ELIGIBLE"
+        ]
+      },
+      "assertions": [
+        {
+          "name": "verified",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "name": "commitments",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "callbacks",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "required_code:OFFER_ELIGIBLE",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "actual_outcome": {
+        "verified": true,
+        "attempts": 0,
+        "commitments": [],
+        "callbacks": [],
+        "result_codes": [
+          "IDENTITY_VERIFIED",
+          "OFFER_ELIGIBLE"
+        ]
+      },
+      "provenance": {
+        "source_sha256": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_sha256_at_completion": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_changed_during_run": false,
+        "git_commit": "85f3e7ae4c798c0492953f3f6a2e46725aa259c3",
+        "dirty_working_tree": false,
+        "clock": "2026-11-05T09:00:00+00:00",
+        "backend": "isolated_in_memory_rpc_transport",
+        "language_understanding_tested": false,
+        "judge_model": null,
+        "audio_tested": false,
+        "test_data": "synthetic_uncensored",
+        "simulator_verdict": null
+      },
+      "original_report_sha256": "daff437c9e3adada441187178c4b875ae88761a263ccd55a52c109e2bfa76fae"
+    },
+    {
+      "id": "f7bfbde9-ee61-4b72-86af-28549eedf6b8",
+      "scenario_id": "wrong-identity",
+      "scenario_name": "Three wrong identity attempts",
+      "execution_type": "automated_scripted",
+      "status": "passed",
+      "started_at": "2026-11-06T13:02:21.396771+00:00",
+      "completed_at": "2026-11-06T13:02:21.461148+00:00",
+      "expected_outcome": {
+        "commitments": [],
+        "callbacks": [],
+        "verified": false,
+        "attempts": 3,
+        "required_codes": [
+          "VERIFICATION_LOCKED"
+        ]
+      },
+      "assertions": [
+        {
+          "name": "verified",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "name": "attempts",
+          "expected": 3,
+          "actual": 3,
+          "passed": true
+        },
+        {
+          "name": "commitments",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "callbacks",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "name": "required_code:VERIFICATION_LOCKED",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        }
+      ],
+      "actual_outcome": {
+        "verified": false,
+        "attempts": 3,
+        "commitments": [],
+        "callbacks": [],
+        "result_codes": [
+          "IDENTITY_NOT_VERIFIED",
+          "IDENTITY_NOT_VERIFIED",
+          "VERIFICATION_LOCKED"
+        ]
+      },
+      "provenance": {
+        "source_sha256": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_sha256_at_completion": {
+          "Livekit-Agents/src/agent.py": "116f29129d01523946800f4db78d6fb3e9da965d6b38bfae0b08c92c56efc424",
+          "Livekit-Agents/src/collection.py": "ab5252dae707546f98eeae2240ad7e5e995e8daa24d2d57e291e85117f3efa3c",
+          "Livekit-Agents/src/collection_agent.py": "3291befa9f70f629827c8d26e8f99c1c1a0b902d9d583160137cf29f45c23934",
+          "Livekit-Agents/src/collection_backend.py": "bf9e2c65a1032d60e87d17e61194b81f23a113c78fb0145fa72b27c32c3ca013",
+          "Livekit-Agents/src/observability.py": "304d992fb24323de5ab0a418d229bfeec88c8059090bb60d8e7d03ae3b5474a1",
+          "Livekit-Agents/src/evaluation.py": "603cb542cab2b54532a4d1e4913ada7aff63e2d4b0bfe899af588f0e9a1a6194",
+          "Livekit-Agents/src/voice_configuration.py": "0bbed1dd51babea930ff43b8a500564fb005a97c06f9afa358b05c030f178e3d",
+          "Livekit-Agents/src/voice_catalog.json": "f59f3b6cf09d20a3b17fecc2e40594741bb4842c629972115ea58d227a66b56d",
+          "Livekit-Agents/evaluation/scenarios.json": "64131c2b8254450658f083967fb8c1426232db1eaa7abade2763657ea7e76758"
+        },
+        "source_changed_during_run": false,
+        "git_commit": "85f3e7ae4c798c0492953f3f6a2e46725aa259c3",
+        "dirty_working_tree": false,
+        "clock": "2026-11-05T09:00:00+00:00",
+        "backend": "isolated_in_memory_rpc_transport",
+        "language_understanding_tested": false,
+        "judge_model": null,
+        "audio_tested": false,
+        "test_data": "synthetic_uncensored",
+        "simulator_verdict": null
+      },
+      "original_report_sha256": "60e5938c1c536b4b0ab02c65ff59abe5a279b0d5a1540148f3e90d77d021016f"
+    }
+  ]
+}

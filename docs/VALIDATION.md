@@ -1,5 +1,9 @@
 # Validation and retained test evidence
 
+For the current area/type matrix and manual-test branches, see
+[Test scope and evidence](TEST_SCOPE.md). The [6 November offline execution](test-results/2026-11-06-offline.md)
+records automated results; real-browser/model/audio evidence remains separate.
+
 Telephony is deferred. The existing browser call directions and the user's manual
 audio checks remain available. Manual audio checks, scripted SDK tests, real-model
 text evaluations, cloud audio simulations and real database tests are distinct
